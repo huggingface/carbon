@@ -10,7 +10,7 @@ A project to build a plasmid generation model. Current training proposal: [here]
 
 ### Natural Plasmids
 - **PLSDB:** 66k bacterial plasmid sequences collected from GenBank and RefSeq isolate genomes. Includes metadata on host taxonomy, geographical location, antibiotic resistance genes, virulence factors, and MOB/replicon typing.
-- **IMG/PR:** An environmental database containing 693k plasmid sequences automatically identified from isolate genomes, metagenomes, and metatranscriptomes. Data analysis notebook available at [`carbon/data/imgpr_data_analysis.ipynb`](carbon/data/imgpr_data_analysis.ipynb).
+- **IMG/PR:** An environmental database containing 693k plasmid sequences automatically identified from isolate genomes, metagenomes, and metatranscriptomes. Data analysis notebook available at [`data/imgpr_data_analysis.ipynb`](data/imgpr_data_analysis.ipynb).
 - **PIPdb:** A pathogen-focused database with 761k plasmid sequences from pathogenic bacteria, including annotations for virulence factors and antimicrobial resistance genes, as well as a risk-scoring system.
 
 Datasets are available on the hub: [https://huggingface.co/datasets/HuggingFaceTB/carbon-raw-data](https://huggingface.co/datasets/HuggingFaceTB/carbon-raw-data)
@@ -20,8 +20,8 @@ Datasets are available on the hub: [https://huggingface.co/datasets/HuggingFaceT
 
 ## Model Training
 
-- TRL training under [`trl_training`](carbon/trl_training/), but the training loss has spikes, use nanotron instead. 
-- nanotron training under [`nanotron_training`](carbon/nanotron_training/)
+- TRL training under [`trl_training`](trl_training/), but the training loss has spikes, use nanotron instead. 
+- nanotron training under [`nanotron_training`](nanotron_training/)
 
 ## Evaluation
-This is a WIP. Script to compute token accuracy under [`evaluation/`](carbon/evaluation/).
+This is a WIP. Script to compute token accuracy under [`evaluation/`](evaluation/).
