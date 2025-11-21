@@ -12,8 +12,9 @@ A project to build a plasmid generation model. Current training proposal: [here]
 - **PLSDB:** 66k bacterial plasmid sequences collected from GenBank and RefSeq isolate genomes. Includes metadata on host taxonomy, geographical location, antibiotic resistance genes, virulence factors, and MOB/replicon typing.
 - **IMG/PR:** An environmental database containing 693k plasmid sequences automatically identified from isolate genomes, metagenomes, and metatranscriptomes. Data analysis notebook available at [`data/imgpr_data_analysis.ipynb`](data/imgpr_data_analysis.ipynb).
 - **PIPdb:** A pathogen-focused database with 761k plasmid sequences from pathogenic bacteria, including annotations for virulence factors and antimicrobial resistance genes, as well as a risk-scoring system.
+- **PlasmidScope**: Includes both PLSDB and IMG/PR plus additional plasmids from GenBank, RefSeq, COMPASS.. with standardized annotations and quality filtering + deduplication. Total of 852k plasmids. (The sequences are being added to the hub)
 
-Datasets are available on the hub: [https://huggingface.co/datasets/HuggingFaceTB/carbon-raw-data](https://huggingface.co/datasets/HuggingFaceTB/carbon-raw-data)
+Datasets are available on the hub: [hf-carbon/natural-plasmids](https://huggingface.co/datasets/hf-carbon/natural-plasmids) (and [HuggingFaceTB/carbon-raw-data](https://huggingface.co/datasets/HuggingFaceTB/carbon-raw-data) for the viewer)
 
 ### Synthetic Plasmids from Labs
 - The request to [Addgene](https://www.addgene.org/browse/) (160k plasmids) is still being processed.
