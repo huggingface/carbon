@@ -3,7 +3,7 @@ import os
 
 parser = argparse.ArgumentParser("Quick tokenization.")
 
-# python tokenize_datatrove.py hf://datasets/HuggingFaceTB/carbon-raw-data/imgpr_sequences --save_name imgpr  --n_tasks 50 --tokenizer  hf-carbon/tokenizer-gene --text_key sequence --chunk_size 2048 --seed 0
+# python tokenize_datatrove.py hf://datasets/HuggingFaceTB/carbon-raw-data/imgpr_sequences --save_name imgpr  --n_tasks 50 --tokenizer  hf-carbon/tokenizer-gene --text_key sequence --chunk_size 2049 --seed 0
 # edit paths in the script
 
 parser.add_argument("data_path", type=str, help="Path to the data to tokenize.")
@@ -11,7 +11,7 @@ parser.add_argument("--n_tasks", type=int, help="nb of tokenization tasks", defa
 parser.add_argument("--tokenizer", type=str, help="tokenizer to use", default="hf-carbon/tokenizer-gene")
 parser.add_argument("--max_toks", type=int, help="max tokens per file", default=1e9)
 parser.add_argument("--text_key", type=str, default="sequence")
-parser.add_argument("--chunk_size", type=int, help="chunk size", default=2048)
+parser.add_argument("--chunk_size", type=int, help="chunk size", default=2049)
 parser.add_argument("--seed", type=int, help="seed", default=0)
 parser.add_argument("--save_name", type=str, help="dataset save name", default="default")
 
