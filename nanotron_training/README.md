@@ -5,9 +5,9 @@ You can tokenize the data using [datatrove](https://github.com/huggingface/datat
 
 ## Training setup
 
-Please refer to [nanotron](https://github.com/huggingface/nanotron/) for detailed instructions on setting up your training environment and launching jobs. Here, we use SmolLM3 [branch](https://github.com/huggingface/nanotron/tree/smollm3) for training we use this and this [branch](https://github.com/huggingface/datatrove/tree/nouamane/avoid-s3) of [datatrove](https://github.com/huggingface/datatrove).
+Please refer to [nanotron](https://github.com/huggingface/nanotron/) for detailed instructions on setting up your training environment and launching jobs. For training, we use SmolLM3 nanotron [branch](https://github.com/huggingface/nanotron/tree/smollm3), and we use this [branch](https://github.com/huggingface/datatrove/tree/nouamane/avoid-s3) of [datatrove](https://github.com/huggingface/datatrove).
 
-Below is an example of launching a training on 1 node (you adjust change the DP value and batch size in the configto chnage the number of GPUs) and run:
+Below is an example of launching a training on 1 node (you can change the DP value and batch size in the config to change the number of GPUs) and run:
 
 ```bash
 git clone https://github.com/huggingface/nanotron
