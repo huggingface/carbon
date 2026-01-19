@@ -1,5 +1,5 @@
 import os
-os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+# os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 
 from hybrid_tokenizer import HybridTokenizer
 from transformers import AutoTokenizer
