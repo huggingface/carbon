@@ -76,3 +76,39 @@ SLURM:
 ```
 sbatch --export=MODEL=/path/to/carbon/model-or-hub-repo,REVISION=checkpoint-10000,CONTEXT_LEN=96000 evaluation/clinvar_vep_eval.slurm
 ```
+
+### KEGG DNA-only classifier (post-training)
+This matches the BioReason **DNA-only Evo2** setup: we train a lightweight classifier head on `wanglab/kegg` **with the backbone frozen** and evaluate accuracy/F1 on **val and test splits**.
+
+CLI:
+```
+python evaluation/kegg_dna_classifier_train.py \
+  --model /path/to/carbon/model-or-hub-repo \
+  --revision checkpoint-10000 \
+  --max_epochs 5 \
+  --batch_size 1 \
+  --max_length 2048 \
+  --truncate_dna_per_side 1024 \
+  --merge_val_test_set \
+  --bf16
+```
+
+SLURM:
+```
+sbatch --export=MODEL=/path/to/carbon/model-or-hub-repo,REVISION=checkpoint-10000 kegg_dna_classifier_train.slurm
+```
+
+Optional upload:
+```
+python evaluation/kegg_dna_classifier_train.py \
+  --model /path/to/carbon/model-or-hub-repo \
+  --revision checkpoint-10000 \
+  --max_epochs 5 \
+  --batch_size 1 \
+  --max_length 2048 \
+  --truncate_dna_per_side 1024 \
+  --merge_val_test_set \
+  --bf16 \
+  --push_to_hub \
+  --hub_repo_id hf-carbon/kegg-dna-classifier-results
+```
