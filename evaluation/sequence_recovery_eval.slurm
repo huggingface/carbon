@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH -J seq_recovery_eval
-#SBATCH -o seq_recovery_eval_%j.out
-#SBATCH -e seq_recovery_eval_%j.err
+#SBATCH -o slurm_logs/seq_recovery_eval_%j.out
+#SBATCH -e slurm_logs/seq_recovery_eval_%j.err
 #SBATCH -t 06:00:00
 #SBATCH -N 1
 #SBATCH --gres=gpu:1
