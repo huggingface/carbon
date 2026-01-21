@@ -27,4 +27,33 @@ Datasets are available on the hub: [hf-carbon/natural-plasmids](https://huggingf
 For large scale pretraining we use [nanotron](https://github.com/huggingface/nanotron/tree/main) library.
 
 ## Evaluation
-Kashif's fork of Gnerator to run Sequence Recovery benchmark on our cluster: https://github.com/kashif/GENERator/tree/evals
+
+### Sequence Recovery 
+We provide a standalone eval script that runs Sequence Recovery after training against a **Hub model + revision** and saves results to Parquet (plus a JSON summary).
+
+CLI:
+```
+python evaluation/sequence_recovery_eval.py \
+  --model /path/to/carbon/model-or-hub-repo \
+  --revision checkpoint-10000 \
+  --data_type eukaryote \
+  --output_dir ./eval_results/sequence_recovery \
+  --bf16
+```
+
+SLURM:
+```
+sbatch --export=MODEL=/path/to/carbon/model-or-hub-repo,REVISION=checkpoint-10000,DATA_TYPE=eukaryote evaluation/sequence_recovery_eval.slurm
+```
+
+Optional upload:
+```
+python evaluation/sequence_recovery_eval.py \
+  --model /path/to/carbon/model-or-hub-repo \
+  --revision checkpoint-10000 \
+  --data_type eukaryote \
+  --output_dir ./eval_results/sequence_recovery \
+  --bf16 \
+  --push_to_hub \
+  --hub_repo_id hf-carbon/seq-recovery-results
+```
