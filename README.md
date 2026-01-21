@@ -29,7 +29,7 @@ For large scale pretraining we use [nanotron](https://github.com/huggingface/nan
 ## Evaluation
 
 ### Sequence Recovery 
-We provide a standalone eval script that runs Sequence Recovery after training against a **Hub model + revision** and saves results to Parquet (plus a JSON summary).
+We provide a standalone eval script that runs Sequence Recovery after training against a **Hub model + revision** and saves results to Parquet (plus a JSON summary). Sequence Recovery is a **training-free generative eval**: given a fixed-length DNA context, the model generates the next segment and we score **exact-base recovery accuracy** (overall + type-wise).
 
 CLI:
 ```
