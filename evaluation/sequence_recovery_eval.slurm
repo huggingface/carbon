@@ -9,7 +9,7 @@
 #SBATCH --mem=64G
 
 # Example usage:
-# sbatch --export=MODEL=GenerTeam/GENERator-eukaryote-1.2b-base,REVISION=checkpoint-10000,DATA_TYPE=eukaryote sequence_recovery_eval.slurm
+# sbatch --export=MODEL=/path/to/carbon/model-or-hub-repo,REVISION=checkpoint-10000,DATA_TYPE=eukaryote sequence_recovery_eval.slurm
 
 set -euo pipefail
 
@@ -27,11 +27,12 @@ HUB_REPO_ID=${HUB_REPO_ID:-""}
 HUB_REPO_TYPE=${HUB_REPO_TYPE:-"dataset"}
 
 if [[ -z "$MODEL" ]]; then
-  echo "MODEL env var is required (e.g., MODEL=GenerTeam/GENERator-eukaryote-1.2b-base)"
+  echo "MODEL env var is required (e.g., MODEL=/path/to/carbon/model-or-hub-repo)"
   exit 1
 fi
 
-CMD=(python /Users/kashif/Github/carbon/carbon/evaluation/sequence_recovery_eval.py \
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CMD=(python "$SCRIPT_DIR/sequence_recovery_eval.py" \
   --model "$MODEL" \
   --data_type "$DATA_TYPE" \
   --data_path "$DATA_PATH" \
