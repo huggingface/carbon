@@ -42,9 +42,6 @@ python evaluation/sequence_recovery_eval.py \
   --bf16
 ```
 
-### Character-level eval (legacy)
-`evaluation/char_eval.py` is a legacy character‑level accuracy script that evaluates next‑token predictions on fixed‑length chunks (currently configured for IMG/PR data). It’s useful as a quick sanity check, but not integrated into the main post‑training eval pipeline.
-
 SLURM:
 ```
 sbatch --export=MODEL=/path/to/carbon/model-or-hub-repo,REVISION=checkpoint-10000,DATA_TYPE=eukaryote evaluation/sequence_recovery_eval.slurm
