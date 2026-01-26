@@ -204,20 +204,82 @@ def process_data_evo2(sequences_data, args):
     try:
         from evo2 import Evo2
     except Exception as e:
-        raise RuntimeError("Evo2 library not available; install evo2 to use --use_evo2") from e
+        raise RuntimeError(
+            "Evo2 library not available; install evo2 to use --use_evo2"
+        ) from e
 
     torch.cuda.set_device(0)
     model = Evo2(args.model)
 
     sequences = [item["sequence"] for item in sequences_data]
     indices = [item["hash_index"] for item in sequences_data]
+    total_sequences = len(sequences)
 
     predictions = []
-    for seq, hash_index in tqdm(list(zip(sequences, indices)), desc="Evo2", unit="seq"):
-        prompt = seq[-min(len(seq), args.max_seq_len) :]
-        output = model.generate(prompt_seqs=[prompt], n_tokens=args.gen_len_bp, temperature=1.0, top_k=4)
-        pred = output.sequences[0]
-        predictions.append({"hash_index": hash_index, "pred": pred})
+
+    # Evo2/vortex has issues with large batches due to 32-bit indexing limits
+    # Use a smaller batch size (or process individually if batch_size is too large)
+    # Try batching with smaller size, fallback to individual if it fails
+    evo2_batch_size = min(getattr(args, "batch_size", 1), 8)  # Cap at 8 for evo2
+
+    with tqdm(total=total_sequences, desc="Evo2", unit="seq") as pbar:
+        for i in range(0, total_sequences, evo2_batch_size):
+            batch_seqs = sequences[i : i + evo2_batch_size]
+            batch_indices = indices[i : i + evo2_batch_size]
+
+            # Prepare prompts for batch
+            batch_prompts = [
+                seq[-min(len(seq), args.max_seq_len) :] for seq in batch_seqs
+            ]
+
+            try:
+                # Try batch generation
+                if evo2_batch_size > 1:
+                    output = model.generate(
+                        prompt_seqs=batch_prompts,
+                        n_tokens=args.gen_len_bp,
+                        temperature=1.0,
+                        top_k=4,
+                    )
+                    # Extract predictions for each sequence in batch
+                    for j, (pred, hash_index) in enumerate(
+                        zip(output.sequences, batch_indices)
+                    ):
+                        predictions.append({"hash_index": hash_index, "pred": pred})
+                else:
+                    # Process individually
+                    for seq, hash_index in zip(batch_seqs, batch_indices):
+                        prompt = seq[-min(len(seq), args.max_seq_len) :]
+                        output = model.generate(
+                            prompt_seqs=[prompt],
+                            n_tokens=args.gen_len_bp,
+                            temperature=1.0,
+                            top_k=4,
+                        )
+                        predictions.append(
+                            {"hash_index": hash_index, "pred": output.sequences[0]}
+                        )
+            except RuntimeError as e:
+                # If batch fails, fallback to individual processing
+                if "32BitIndexMath" in str(e) or evo2_batch_size > 1:
+                    print(
+                        f"Batch processing failed, falling back to individual processing: {e}"
+                    )
+                    for seq, hash_index in zip(batch_seqs, batch_indices):
+                        prompt = seq[-min(len(seq), args.max_seq_len) :]
+                        output = model.generate(
+                            prompt_seqs=[prompt],
+                            n_tokens=args.gen_len_bp,
+                            temperature=1.0,
+                            top_k=4,
+                        )
+                        predictions.append(
+                            {"hash_index": hash_index, "pred": output.sequences[0]}
+                        )
+                else:
+                    raise
+
+            pbar.update(len(batch_seqs))
 
     return predictions
 
