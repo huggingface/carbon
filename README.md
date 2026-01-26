@@ -41,6 +41,7 @@ python evaluation/sequence_recovery_eval.py \
   --output_dir ./eval_results/sequence_recovery \
   --bf16
 ```
+For official Evo2 weights, add `--use_evo2` (and optionally `--gen_len_bp 30`).
 
 SLURM:
 ```
@@ -71,6 +72,7 @@ python evaluation/clinvar_vep_eval.py \
   --output_dir ./eval_results/clinvar_vep \
   --bf16
 ```
+For official Evo2 weights, add `--use_evo2`.
 
 SLURM:
 ```

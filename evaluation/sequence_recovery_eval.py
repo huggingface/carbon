@@ -55,6 +55,12 @@ def parse_args() -> argparse.Namespace:
         help="Number of tokens to generate",
     )
     parser.add_argument(
+        "--gen_len_bp",
+        type=int,
+        default=30,
+        help="Number of base pairs to generate when using Evo2",
+    )
+    parser.add_argument(
         "--batch_size",
         type=int,
         default=64,
@@ -64,6 +70,11 @@ def parse_args() -> argparse.Namespace:
         "--bf16",
         action="store_true",
         help="Use bfloat16",
+    )
+    parser.add_argument(
+        "--use_evo2",
+        action="store_true",
+        help="Use Evo2 inference (official evo2 library) instead of HF AutoModel",
     )
     parser.add_argument(
         "--push_to_hub",
@@ -189,6 +200,28 @@ def process_data_shard(shard_id, sequences_data, args, dtype):
     return predictions
 
 
+def process_data_evo2(sequences_data, args):
+    try:
+        from evo2 import Evo2
+    except Exception as e:
+        raise RuntimeError("Evo2 library not available; install evo2 to use --use_evo2") from e
+
+    torch.cuda.set_device(0)
+    model = Evo2(args.model)
+
+    sequences = [item["sequence"] for item in sequences_data]
+    indices = [item["hash_index"] for item in sequences_data]
+
+    predictions = []
+    for seq, hash_index in tqdm(list(zip(sequences, indices)), desc="Evo2", unit="seq"):
+        prompt = seq[-min(len(seq), args.max_seq_len) :]
+        output = model.generate(prompt_seqs=[prompt], n_tokens=args.gen_len_bp, temperature=1.0, top_k=4)
+        pred = output.sequences[0]
+        predictions.append({"hash_index": hash_index, "pred": pred})
+
+    return predictions
+
+
 def process_checkpoint(args: argparse.Namespace, dtype: str) -> Dict:
     print("\n" + "=" * 80)
     print("🧬  SEQUENCE RECOVERY EVAL  🧬")
@@ -230,34 +263,39 @@ def process_checkpoint(args: argparse.Namespace, dtype: str) -> Dict:
             )
 
     print(f"Data divided into {len(shards)} shards")
-    start_time = time.time()
+    if args.use_evo2:
+        all_predictions = process_data_evo2(
+            df[["sequence", "hash_index"]].to_dict("records"), args
+        )
+    else:
+        start_time = time.time()
 
-    with ProcessPoolExecutor(max_workers=num_gpus) as executor:
-        future_to_shard = {}
-        for shard in shards:
-            future = executor.submit(
-                process_data_shard,
-                shard["shard_id"],
-                shard["data"],
-                args,
-                dtype,
-            )
-            future_to_shard[future] = shard["shard_id"]
-
-        all_predictions = []
-        for future in as_completed(future_to_shard):
-            shard_id = future_to_shard[future]
-            try:
-                shard_predictions = future.result()
-                all_predictions.extend(shard_predictions)
-                print(
-                    f"Shard {shard_id} completed, collected {len(shard_predictions)} predictions"
+        with ProcessPoolExecutor(max_workers=num_gpus) as executor:
+            future_to_shard = {}
+            for shard in shards:
+                future = executor.submit(
+                    process_data_shard,
+                    shard["shard_id"],
+                    shard["data"],
+                    args,
+                    dtype,
                 )
-            except Exception as e:
-                print(f"Shard {shard_id} generated an exception: {e}")
+                future_to_shard[future] = shard["shard_id"]
 
-    elapsed_time = time.time() - start_time
-    print(f"All shards completed in {elapsed_time:.2f} seconds")
+            all_predictions = []
+            for future in as_completed(future_to_shard):
+                shard_id = future_to_shard[future]
+                try:
+                    shard_predictions = future.result()
+                    all_predictions.extend(shard_predictions)
+                    print(
+                        f"Shard {shard_id} completed, collected {len(shard_predictions)} predictions"
+                    )
+                except Exception as e:
+                    print(f"Shard {shard_id} generated an exception: {e}")
+
+        elapsed_time = time.time() - start_time
+        print(f"All shards completed in {elapsed_time:.2f} seconds")
 
     pred_df = pd.DataFrame(all_predictions)
     results_df = df.merge(pred_df, on="hash_index", how="left", suffixes=("", "_pred"))

@@ -22,6 +22,7 @@ BATCH_SIZE=${BATCH_SIZE:-4}
 NUM_PROCESSES=${NUM_PROCESSES:-32}
 CONTEXT_LEN=${CONTEXT_LEN:-96000}
 BF16=${BF16:-"true"}
+USE_EVO2=${USE_EVO2:-"false"}
 PUSH_TO_HUB=${PUSH_TO_HUB:-"false"}
 HUB_REPO_ID=${HUB_REPO_ID:-""}
 HUB_REPO_TYPE=${HUB_REPO_TYPE:-"dataset"}
@@ -47,6 +48,10 @@ fi
 
 if [[ "$BF16" == "true" ]]; then
   CMD+=(--bf16)
+fi
+
+if [[ "$USE_EVO2" == "true" ]]; then
+  CMD+=(--use_evo2)
 fi
 
 if [[ "$PUSH_TO_HUB" == "true" ]]; then

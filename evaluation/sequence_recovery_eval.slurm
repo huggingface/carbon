@@ -21,7 +21,9 @@ OUTPUT_DIR=${OUTPUT_DIR:-"./eval_results/sequence_recovery"}
 BATCH_SIZE=${BATCH_SIZE:-64}
 MAX_SEQ_LEN=${MAX_SEQ_LEN:-6144}
 GEN_LEN=${GEN_LEN:-5}
+GEN_LEN_BP=${GEN_LEN_BP:-30}
 BF16=${BF16:-"true"}
+USE_EVO2=${USE_EVO2:-"false"}
 PUSH_TO_HUB=${PUSH_TO_HUB:-"false"}
 HUB_REPO_ID=${HUB_REPO_ID:-""}
 HUB_REPO_TYPE=${HUB_REPO_TYPE:-"dataset"}
@@ -39,7 +41,8 @@ CMD=(python "$SCRIPT_DIR/sequence_recovery_eval.py" \
   --output_dir "$OUTPUT_DIR" \
   --batch_size "$BATCH_SIZE" \
   --max_seq_len "$MAX_SEQ_LEN" \
-  --gen_len "$GEN_LEN")
+  --gen_len "$GEN_LEN" \
+  --gen_len_bp "$GEN_LEN_BP")
 
 if [[ -n "$REVISION" ]]; then
   CMD+=(--revision "$REVISION")
@@ -47,6 +50,10 @@ fi
 
 if [[ "$BF16" == "true" ]]; then
   CMD+=(--bf16)
+fi
+
+if [[ "$USE_EVO2" == "true" ]]; then
+  CMD+=(--use_evo2)
 fi
 
 if [[ "$PUSH_TO_HUB" == "true" ]]; then

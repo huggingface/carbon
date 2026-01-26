@@ -66,6 +66,11 @@ def parse_args() -> argparse.Namespace:
         help="Use bfloat16",
     )
     parser.add_argument(
+        "--use_evo2",
+        action="store_true",
+        help="Use Evo2 inference (official evo2 library) instead of HF AutoModel",
+    )
+    parser.add_argument(
         "--push_to_hub",
         action="store_true",
         help="Upload outputs to the Hub",
@@ -329,6 +334,41 @@ def parallel_compute_probabilities(
     return list(p_ref), list(p_alt)
 
 
+def compute_probabilities_evo2(clinvar_df: pd.DataFrame, model_name: str) -> Tuple[List[float], List[float]]:
+    try:
+        from evo2 import Evo2
+    except Exception as e:
+        raise RuntimeError("Evo2 library not available; install evo2 to use --use_evo2") from e
+
+    torch.cuda.set_device(0)
+    model = Evo2(model_name)
+
+    base_ids = {}
+    for b in ["A", "C", "G", "T"]:
+        ids = model.tokenizer.tokenize(b)
+        base_ids[b] = ids[0] if ids else None
+
+    p_ref = []
+    p_alt = []
+
+    for i in tqdm(range(len(clinvar_df)), desc="Evo2 Probabilities"):
+        seq = clinvar_df["sequence"][i]
+        ref = clinvar_df["ref"][i]
+        alt = clinvar_df["alt"][i]
+
+        input_ids = torch.tensor(model.tokenizer.tokenize(seq), dtype=torch.int).unsqueeze(0).to("cuda:0")
+        outputs, _ = model(input_ids)
+        logits = outputs[0][0, -1, :]
+        probs = torch.softmax(logits, dim=0)
+
+        ref_id = base_ids.get(ref)
+        alt_id = base_ids.get(alt)
+        p_ref.append(float(probs[ref_id]) if ref_id is not None else 0.0)
+        p_alt.append(float(probs[alt_id]) if alt_id is not None else 0.0)
+
+    return p_ref, p_alt
+
+
 def evaluate_predictions(labels: np.ndarray, scores: np.ndarray) -> Dict[str, float]:
     print("📊 Evaluating model predictions...")
     start_time = time.time()
@@ -391,21 +431,24 @@ def main() -> None:
         args.hg38_path, args.clinvar_path, args.context_length
     )
 
-    tokenizer = AutoTokenizer.from_pretrained(
-        args.model, revision=args.revision, trust_remote_code=True
-    )
+    if args.use_evo2:
+        p_ref, p_alt = compute_probabilities_evo2(clinvar_df, args.model)
+    else:
+        tokenizer = AutoTokenizer.from_pretrained(
+            args.model, revision=args.revision, trust_remote_code=True
+        )
 
-    logits = compute_logits_parallel(
-        clinvar_df,
-        args.model,
-        args.revision,
-        dtype,
-        batch_size=args.batch_size,
-    )
+        logits = compute_logits_parallel(
+            clinvar_df,
+            args.model,
+            args.revision,
+            dtype,
+            batch_size=args.batch_size,
+        )
 
-    p_ref, p_alt = parallel_compute_probabilities(
-        clinvar_df, logits, tokenizer, num_processes=args.num_processes
-    )
+        p_ref, p_alt = parallel_compute_probabilities(
+            clinvar_df, logits, tokenizer, num_processes=args.num_processes
+        )
 
     clinvar_df["p_ref"] = p_ref
     clinvar_df["p_alt"] = p_alt
