@@ -92,6 +92,12 @@ def parse_args() -> argparse.Namespace:
         choices=["dataset", "model"],
         help="HF repo type",
     )
+    parser.add_argument(
+        "--max_samples",
+        type=int,
+        default=None,
+        help="Limit number of sequences to evaluate (for testing). If None, evaluates all sequences.",
+    )
     return parser.parse_args()
 
 
@@ -209,7 +215,15 @@ def process_data_evo2(sequences_data, args):
         ) from e
 
     torch.cuda.set_device(0)
-    model = Evo2(args.model)
+
+    # Evo2 expects model name like "evo2_1b_base", not "arcinstitute/evo2_1b_base"
+    # Strip the "arcinstitute/" prefix if present
+    model_name = args.model
+    if model_name.startswith("arcinstitute/"):
+        model_name = model_name.replace("arcinstitute/", "")
+        print(f"Note: Stripped 'arcinstitute/' prefix. Using model name: {model_name}")
+
+    model = Evo2(model_name)
 
     sequences = [item["sequence"] for item in sequences_data]
     indices = [item["hash_index"] for item in sequences_data]
@@ -217,10 +231,11 @@ def process_data_evo2(sequences_data, args):
 
     predictions = []
 
-    # Evo2/vortex has issues with large batches due to 32-bit indexing limits
-    # Use a smaller batch size (or process individually if batch_size is too large)
-    # Try batching with smaller size, fallback to individual if it fails
-    evo2_batch_size = min(getattr(args, "batch_size", 1), 8)  # Cap at 8 for evo2
+    # Use requested batch size - try it for each batch, fallback to individual if OOM
+    evo2_batch_size = getattr(args, "batch_size", 8)
+    print(
+        f"Using batch_size={evo2_batch_size} for evo2 (will fallback to individual if OOM)"
+    )
 
     with tqdm(total=total_sequences, desc="Evo2", unit="seq") as pbar:
         for i in range(0, total_sequences, evo2_batch_size):
@@ -233,7 +248,7 @@ def process_data_evo2(sequences_data, args):
             ]
 
             try:
-                # Try batch generation
+                # Try batch generation with original batch size
                 if evo2_batch_size > 1:
                     output = model.generate(
                         prompt_seqs=batch_prompts,
@@ -259,12 +274,21 @@ def process_data_evo2(sequences_data, args):
                         predictions.append(
                             {"hash_index": hash_index, "pred": output.sequences[0]}
                         )
-            except RuntimeError as e:
-                # If batch fails, fallback to individual processing
-                if "32BitIndexMath" in str(e) or evo2_batch_size > 1:
+
+            except (RuntimeError, torch.cuda.OutOfMemoryError) as e:
+                # Handle OOM or 32-bit indexing errors - fallback to individual for this batch only
+                is_oom = isinstance(
+                    e, torch.cuda.OutOfMemoryError
+                ) or "OutOfMemory" in str(e)
+                is_32bit = "32BitIndexMath" in str(e)
+
+                if (is_oom or is_32bit) and evo2_batch_size > 1:
+                    # Fallback to individual processing for this batch
                     print(
-                        f"Batch processing failed, falling back to individual processing: {e}"
+                        f"\n{'OOM' if is_oom else '32-bit indexing'} error with batch_size={evo2_batch_size}, "
+                        f"falling back to individual processing for this batch"
                     )
+                    torch.cuda.empty_cache()
                     for seq, hash_index in zip(batch_seqs, batch_indices):
                         prompt = seq[-min(len(seq), args.max_seq_len) :]
                         output = model.generate(
@@ -277,9 +301,15 @@ def process_data_evo2(sequences_data, args):
                             {"hash_index": hash_index, "pred": output.sequences[0]}
                         )
                 else:
+                    # Some other error or already individual - re-raise
+                    print(f"\nError during processing: {e}")
                     raise
 
             pbar.update(len(batch_seqs))
+
+            # Clear cache periodically to help with memory fragmentation
+            if (i + evo2_batch_size) % (evo2_batch_size * 20) == 0:
+                torch.cuda.empty_cache()
 
     return predictions
 
@@ -294,6 +324,57 @@ def process_checkpoint(args: argparse.Namespace, dtype: str) -> Dict:
     print(f"Data: {args.data_path}/{args.data_type}/test.parquet")
 
     df = load_parquet_hf(args.data_path, args.data_type)
+
+    # Show dataset info
+    if "type" in df.columns:
+        type_counts = df["type"].value_counts()
+        print(f"Dataset contains {len(df)} sequences with {len(type_counts)} types:")
+        for type_name, count in type_counts.items():
+            print(f"  - {type_name}: {count} sequences")
+
+    # Limit number of samples for testing if requested
+    if args.max_samples is not None and args.max_samples > 0:
+        original_len = len(df)
+        original_df = df.copy()
+
+        # Use random sampling to get a representative subset across types
+        if "type" in df.columns and len(df["type"].unique()) > 1:
+            # Sample proportionally across types to get better representation
+            samples_per_type = max(1, args.max_samples // len(df["type"].unique()))
+            sampled_dfs = []
+            sampled_indices = set()
+
+            for type_name, group in df.groupby("type"):
+                sample_size = min(len(group), samples_per_type)
+                sampled = group.sample(sample_size)
+                sampled_dfs.append(sampled)
+                sampled_indices.update(sampled.index)
+
+            sampled_df = pd.concat(sampled_dfs).reset_index(drop=True)
+
+            # If we got fewer samples than requested, randomly sample more from remaining data
+            if len(sampled_df) < args.max_samples:
+                remaining = args.max_samples - len(sampled_df)
+                # Get remaining rows from original dataframe (exclude already sampled)
+                remaining_df = original_df[~original_df.index.isin(sampled_indices)]
+                if len(remaining_df) > 0:
+                    additional = remaining_df.sample(min(remaining, len(remaining_df)))
+                    sampled_df = pd.concat([sampled_df, additional]).reset_index(
+                        drop=True
+                    )
+            # Ensure we don't exceed max_samples
+            df = sampled_df.head(args.max_samples).copy()
+        else:
+            # No type column or only one type, use random sampling
+            df = df.sample(min(args.max_samples, len(df))).reset_index(drop=True)
+
+        print(f"⚠️  TEST MODE: Limited to {len(df)} samples (from {original_len} total)")
+        if "type" in df.columns:
+            test_type_counts = df["type"].value_counts()
+            print(f"Test subset contains {len(test_type_counts)} types:")
+            for type_name, count in test_type_counts.items():
+                print(f"  - {type_name}: {count} sequences")
+
     total_sequences = len(df)
 
     print("Generating hash indices for sequences...")
@@ -379,7 +460,10 @@ def process_checkpoint(args: argparse.Namespace, dtype: str) -> Dict:
     os.makedirs(args.output_dir, exist_ok=True)
     model_name = args.model.split("/")[-1]
     revision_tag = args.revision or "main"
-    output_basename = f"{model_name}_{revision_tag}_{args.data_type}_{dtype}"
+    test_suffix = f"_test{args.max_samples}" if args.max_samples is not None else ""
+    output_basename = (
+        f"{model_name}_{revision_tag}_{args.data_type}_{dtype}{test_suffix}"
+    )
 
     output_path = os.path.join(args.output_dir, f"{output_basename}.parquet")
     results_df[["hash_index", "pred", "label", "type", "accuracy"]].to_parquet(
