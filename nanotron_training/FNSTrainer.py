@@ -24,7 +24,7 @@ class BPTrainer(Trainer):
         super().__init__(**kwargs)
 
         self.dna_tokenizer = processing_class
-        self.bp_loss_only = bp_loss_only
+        self.bp_loss_only = True
 
         # Cached tensors built once and reused across steps
         self._special_ids = None               # [N_special]
