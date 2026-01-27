@@ -1,3 +1,9 @@
+from transformers import Trainer
+import torch
+import torch.nn.functional as F
+import random
+import numpy as np
+
 class BPTrainer(Trainer):
     """
     Base-pair (BP) level trainer for k-mer tokenized DNA sequences.
