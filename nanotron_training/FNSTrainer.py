@@ -10,7 +10,7 @@ class BPTrainer(Trainer):
 
     This trainer implements a marginal base-pair loss for regular k-mer tokens,
     while falling back to standard token-level cross-entropy for special tokens
-    (e.g., [CLS], [SEP], [PAD], etc.).
+    (e.g., <s>, <pad>, etc.).
 
     For each k-mer token, the model predicts a distribution over the vocabulary.
     The loss is computed by marginalizing token probabilities into per-base
