@@ -1,0 +1,80 @@
+#!/bin/bash
+#SBATCH -J cds_half_shuffle_eval
+#SBATCH -o slurm_logs/cds_half_shuffle_eval_%j.out
+#SBATCH -e slurm_logs/cds_half_shuffle_eval_%j.err
+#SBATCH -t 04:00:00
+#SBATCH -N 1
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=64G
+
+# Example usage:
+# sbatch --export=MODEL=/path/to/carbon/model-or-hub-repo,REVISION=checkpoint-10000,SPLIT=test,SUBSET=cds_half_shuffle cds_half_shuffle_eval.slurm
+
+set -euo pipefail
+
+MODEL=${MODEL:-""}
+REVISION=${REVISION:-""}
+DATASET=${DATASET:-"hf-carbon/carbon_tasks"}
+SUBSET=${SUBSET:-""}
+SPLIT=${SPLIT:-"test"}
+POS_COL=${POS_COL:-""}
+NEG_COL=${NEG_COL:-""}
+LABEL_COL=${LABEL_COL:-""}
+OUTPUT_DIR=${OUTPUT_DIR:-"./eval_results/cds_half_shuffle"}
+MAX_LENGTH=${MAX_LENGTH:-2048}
+BATCH_SIZE=${BATCH_SIZE:-16}
+BF16=${BF16:-"true"}
+USE_EVO2=${USE_EVO2:-"false"}
+PUSH_TO_HUB=${PUSH_TO_HUB:-"false"}
+HUB_REPO_ID=${HUB_REPO_ID:-""}
+HUB_REPO_TYPE=${HUB_REPO_TYPE:-"dataset"}
+
+if [[ -z "$MODEL" ]]; then
+  echo "MODEL env var is required (e.g., MODEL=/path/to/carbon/model-or-hub-repo)"
+  exit 1
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CMD=(/Users/kashif/.venv/bin/python "$SCRIPT_DIR/cds_half_shuffle_eval.py" \
+  --model "$MODEL" \
+  --dataset "$DATASET" \
+  --split "$SPLIT" \
+  --output_dir "$OUTPUT_DIR" \
+  --max_length "$MAX_LENGTH" \
+  --batch_size "$BATCH_SIZE")
+
+if [[ -n "$REVISION" ]]; then
+  CMD+=(--revision "$REVISION")
+fi
+
+if [[ -n "$SUBSET" ]]; then
+  CMD+=(--subset "$SUBSET")
+fi
+
+if [[ -n "$POS_COL" ]]; then
+  CMD+=(--pos_col "$POS_COL")
+fi
+
+if [[ -n "$NEG_COL" ]]; then
+  CMD+=(--neg_col "$NEG_COL")
+fi
+
+if [[ -n "$LABEL_COL" ]]; then
+  CMD+=(--label_col "$LABEL_COL")
+fi
+
+if [[ "$BF16" == "true" ]]; then
+  CMD+=(--bf16)
+fi
+
+if [[ "$USE_EVO2" == "true" ]]; then
+  CMD+=(--use_evo2)
+fi
+
+if [[ "$PUSH_TO_HUB" == "true" ]]; then
+  CMD+=(--push_to_hub --hub_repo_id "$HUB_REPO_ID" --hub_repo_type "$HUB_REPO_TYPE")
+fi
+
+echo "Running: ${CMD[*]}"
+${CMD[@]}

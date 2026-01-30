@@ -79,6 +79,34 @@ SLURM:
 sbatch --export=MODEL=/path/to/carbon/model-or-hub-repo,REVISION=checkpoint-10000,CONTEXT_LEN=96000 evaluation/clinvar_vep_eval.slurm
 ```
 
+### CDS half-shuffle discrimination (post-training)
+This task evaluates whether a model assigns higher likelihood to **real CDS sequences** vs **half-shuffled negatives** (first half fixed, second half shuffled). The dataset lives at `hf-carbon/carbon_tasks`; pass `--subset` and column names if needed.
+For the current dataset, `original_sequence` is the real CDS and `input` is the half-shuffled control.
+
+CLI:
+```
+python evaluation/cds_half_shuffle_eval.py \
+  --model /path/to/carbon/model-or-hub-repo \
+  --revision checkpoint-10000 \
+  --dataset hf-carbon/carbon_tasks \
+  --subset cds_half_shuffle \
+  --split train \
+  --output_dir ./eval_results/cds_half_shuffle \
+  --bf16
+```
+Dataset columns example:
+```
+record_id, taxonomy, gene_type, species_type, original_sequence, length, label, input, __index_level_0__
+```
+In this dataset, `original_sequence` is the real CDS and `input` is the half-shuffled control.
+The dataset currently provides a single `train` split with ~30K rows.
+For official Evo2 weights, add `--use_evo2` and pass the Evo2 model name (e.g., `evo2_1b_base`).
+
+SLURM:
+```
+sbatch --export=MODEL=/path/to/carbon/model-or-hub-repo,REVISION=checkpoint-10000,SUBSET=cds_half_shuffle evaluation/cds_half_shuffle_eval.slurm
+```
+
 ### KEGG DNA-only classifier (post-training)
 This matches the BioReason **DNA-only Evo2** setup: we train a lightweight classifier head on `wanglab/kegg` **with the backbone frozen** and evaluate accuracy/F1 on **val and test splits**.
 

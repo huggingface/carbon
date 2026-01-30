@@ -206,6 +206,33 @@ def process_data_shard(shard_id, sequences_data, args, dtype):
     return predictions
 
 
+def _evo2_model_name(model_arg: str) -> str:
+    return model_arg.split("/")[-1]
+
+
+def _patch_evo2_config_no_flash(model_name: str) -> None:
+    try:
+        from evo2.utils import CONFIG_MAP
+    except Exception:
+        return
+    config_path = CONFIG_MAP.get(model_name)
+    if not config_path or not os.path.exists(config_path):
+        return
+    if config_path.endswith(".json"):
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+    else:
+        import yaml
+
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = yaml.load(f, Loader=yaml.FullLoader)
+    config["use_flash_attn"] = False
+    tmp_path = os.path.join("/tmp", f"{model_name}_no_flash.yml")
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        yaml.dump(config, f)
+    CONFIG_MAP[model_name] = tmp_path
+
+
 def process_data_evo2(sequences_data, args):
     try:
         from evo2 import Evo2
@@ -215,14 +242,8 @@ def process_data_evo2(sequences_data, args):
         ) from e
 
     torch.cuda.set_device(0)
-
-    # Evo2 expects model name like "evo2_1b_base", not "arcinstitute/evo2_1b_base"
-    # Strip the "arcinstitute/" prefix if present
-    model_name = args.model
-    if model_name.startswith("arcinstitute/"):
-        model_name = model_name.replace("arcinstitute/", "")
-        print(f"Note: Stripped 'arcinstitute/' prefix. Using model name: {model_name}")
-
+    model_name = _evo2_model_name(args.model)
+    _patch_evo2_config_no_flash(model_name)
     model = Evo2(model_name)
 
     sequences = [item["sequence"] for item in sequences_data]
