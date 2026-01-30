@@ -3,7 +3,6 @@ import hashlib
 import json
 import os
 import time
-from typing import Optional
 
 import pandas as pd
 import torch
@@ -29,11 +28,6 @@ def parse_args() -> argparse.Namespace:
         "--split",
         default="train",
         help="Dataset split to evaluate",
-    )
-    parser.add_argument(
-        "--label_col",
-        default=None,
-        help="Optional label column (0/1 or A/B). If omitted, pos is assumed correct.",
     )
     parser.add_argument(
         "--model",
@@ -98,24 +92,6 @@ def parse_args() -> argparse.Namespace:
 
 def _hash_seq(seq: str) -> str:
     return hashlib.sha1(seq.encode("utf-8")).hexdigest()[:16]
-
-
-def _ensure_required_columns(df: pd.DataFrame) -> None:
-    required = {"original_sequence", "input"}
-    missing = required.difference(set(df.columns))
-    if missing:
-        raise ValueError(
-            "Missing required columns: "
-            + ", ".join(sorted(missing))
-            + ". Expected columns: original_sequence, input."
-        )
-
-
-def _parse_label(label) -> Optional[int]:
-    if label is None:
-        return None
-    label_int = int(label)
-    return 0 if label_int == 0 else 1
 
 
 def _load_dataset(args: argparse.Namespace) -> pd.DataFrame:
@@ -242,11 +218,8 @@ def main() -> None:
     print(f"Split: {args.split}")
 
     df = _load_dataset(args)
-    _ensure_required_columns(df)
     pos_col = "original_sequence"
     neg_col = "input"
-
-    label_col = args.label_col if args.label_col else None
 
     pos_seqs = df[pos_col].astype(str).tolist()
     neg_seqs = df[neg_col].astype(str).tolist()
@@ -274,13 +247,9 @@ def main() -> None:
         )
 
     preds = [0 if p >= n else 1 for p, n in zip(pos_scores, neg_scores)]
-    labels = []
-    if label_col:
-        labels = [_parse_label(v) for v in df[label_col].tolist()]
-    else:
-        labels = [0] * len(preds)
+    labels = [0] * len(preds)
 
-    correct = [int(p == l) for p, l in zip(preds, labels)]
+    correct = [int(p == label) for p, label in zip(preds, labels)]
     accuracy = sum(correct) / max(len(correct), 1)
 
     results = {
@@ -316,7 +285,6 @@ def main() -> None:
         "split": args.split,
         "pos_col": pos_col,
         "neg_col": neg_col,
-        "label_col": label_col,
         "accuracy": accuracy,
         "num_examples": len(output_df),
         "timestamp": time.time(),
