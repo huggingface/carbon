@@ -114,16 +114,7 @@ def _ensure_required_columns(df: pd.DataFrame) -> None:
 def _parse_label(label) -> Optional[int]:
     if label is None:
         return None
-    if isinstance(label, str):
-        label = label.strip().lower()
-        if label in {"a", "pos", "positive", "real", "wt", "ref"}:
-            return 0
-        if label in {"b", "neg", "negative", "shuffled", "alt", "mut"}:
-            return 1
-    try:
-        label_int = int(label)
-    except Exception:
-        return None
+    label_int = int(label)
     return 0 if label_int == 0 else 1
 
 
