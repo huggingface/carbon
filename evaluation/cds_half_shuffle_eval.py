@@ -3,10 +3,11 @@ import hashlib
 import json
 import os
 import time
-from typing import Iterable, Optional, Tuple
+from typing import Optional
 
 import pandas as pd
 import torch
+from datasets import load_dataset
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
@@ -26,18 +27,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--split",
-        default="test",
+        default="train",
         help="Dataset split to evaluate",
-    )
-    parser.add_argument(
-        "--pos_col",
-        default=None,
-        help="Column name for the positive (real CDS) sequence",
-    )
-    parser.add_argument(
-        "--neg_col",
-        default=None,
-        help="Column name for the negative (half-shuffled CDS) sequence",
     )
     parser.add_argument(
         "--label_col",
@@ -109,50 +100,15 @@ def _hash_seq(seq: str) -> str:
     return hashlib.sha1(seq.encode("utf-8")).hexdigest()[:16]
 
 
-def _infer_pair_columns(columns: Iterable[str]) -> Tuple[str, str]:
-    cols = {c.lower(): c for c in columns}
-    pos_keys = [
-        "original_sequence",
-        "pos",
-        "positive",
-        "real",
-        "wt",
-        "wildtype",
-        "reference",
-        "ref",
-        "original",
-        "sequence_pos",
-        "seq_pos",
-        "cds",
-    ]
-    neg_keys = [
-        "input",
-        "neg",
-        "negative",
-        "shuffled",
-        "alt",
-        "mut",
-        "mutant",
-        "control",
-        "chimera",
-        "sequence_neg",
-        "seq_neg",
-    ]
-    pos_col = None
-    neg_col = None
-    for key in pos_keys:
-        if key in cols:
-            pos_col = cols[key]
-            break
-    for key in neg_keys:
-        if key in cols:
-            neg_col = cols[key]
-            break
-    if not pos_col or not neg_col:
+def _ensure_required_columns(df: pd.DataFrame) -> None:
+    required = {"original_sequence", "input"}
+    missing = required.difference(set(df.columns))
+    if missing:
         raise ValueError(
-            "Could not infer pos/neg columns. Provide --pos_col and --neg_col."
+            "Missing required columns: "
+            + ", ".join(sorted(missing))
+            + ". Expected columns: original_sequence, input."
         )
-    return pos_col, neg_col
 
 
 def _parse_label(label) -> Optional[int]:
@@ -174,13 +130,6 @@ def _parse_label(label) -> Optional[int]:
 def _load_dataset(args: argparse.Namespace) -> pd.DataFrame:
     if args.dataset.endswith(".parquet") or args.dataset.startswith("hf://"):
         return pd.read_parquet(args.dataset)
-
-    try:
-        from datasets import load_dataset
-    except Exception as e:
-        raise RuntimeError(
-            "datasets is required to load HF datasets. Install with `pip install datasets`."
-        ) from e
 
     ds = load_dataset(args.dataset, args.subset, split=args.split)
     return ds.to_pandas()
@@ -302,11 +251,9 @@ def main() -> None:
     print(f"Split: {args.split}")
 
     df = _load_dataset(args)
-    if args.pos_col and args.neg_col:
-        pos_col = args.pos_col
-        neg_col = args.neg_col
-    else:
-        pos_col, neg_col = _infer_pair_columns(df.columns)
+    _ensure_required_columns(df)
+    pos_col = "original_sequence"
+    neg_col = "input"
 
     label_col = args.label_col if args.label_col else None
 

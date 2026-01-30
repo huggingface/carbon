@@ -17,9 +17,7 @@ MODEL=${MODEL:-""}
 REVISION=${REVISION:-""}
 DATASET=${DATASET:-"hf-carbon/carbon_tasks"}
 SUBSET=${SUBSET:-""}
-SPLIT=${SPLIT:-"test"}
-POS_COL=${POS_COL:-""}
-NEG_COL=${NEG_COL:-""}
+SPLIT=${SPLIT:-"train"}
 LABEL_COL=${LABEL_COL:-""}
 OUTPUT_DIR=${OUTPUT_DIR:-"./eval_results/cds_half_shuffle"}
 MAX_LENGTH=${MAX_LENGTH:-2048}
@@ -50,14 +48,6 @@ fi
 
 if [[ -n "$SUBSET" ]]; then
   CMD+=(--subset "$SUBSET")
-fi
-
-if [[ -n "$POS_COL" ]]; then
-  CMD+=(--pos_col "$POS_COL")
-fi
-
-if [[ -n "$NEG_COL" ]]; then
-  CMD+=(--neg_col "$NEG_COL")
 fi
 
 if [[ -n "$LABEL_COL" ]]; then
