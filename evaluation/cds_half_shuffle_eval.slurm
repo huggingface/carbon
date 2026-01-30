@@ -18,7 +18,6 @@ REVISION=${REVISION:-""}
 DATASET=${DATASET:-"hf-carbon/carbon_tasks"}
 SUBSET=${SUBSET:-""}
 SPLIT=${SPLIT:-"train"}
-LABEL_COL=${LABEL_COL:-""}
 OUTPUT_DIR=${OUTPUT_DIR:-"./eval_results/cds_half_shuffle"}
 MAX_LENGTH=${MAX_LENGTH:-2048}
 BATCH_SIZE=${BATCH_SIZE:-16}
@@ -50,9 +49,6 @@ if [[ -n "$SUBSET" ]]; then
   CMD+=(--subset "$SUBSET")
 fi
 
-if [[ -n "$LABEL_COL" ]]; then
-  CMD+=(--label_col "$LABEL_COL")
-fi
 
 if [[ "$BF16" == "true" ]]; then
   CMD+=(--bf16)
