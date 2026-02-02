@@ -334,13 +334,40 @@ def parallel_compute_probabilities(
     return list(p_ref), list(p_alt)
 
 
-def compute_probabilities_evo2(clinvar_df: pd.DataFrame, model_name: str) -> Tuple[List[float], List[float]]:
+def _patch_evo2_config_no_flash(model_name: str) -> None:
+    try:
+        from evo2.utils import CONFIG_MAP
+    except Exception:
+        return
+    config_path = CONFIG_MAP.get(model_name)
+    if not config_path or not os.path.exists(config_path):
+        return
+    if config_path.endswith(".json"):
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+    else:
+        import yaml
+
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = yaml.load(f, Loader=yaml.FullLoader)
+    config["use_flash_attn"] = False
+    tmp_path = os.path.join("/tmp", f"{model_name}_no_flash_vep.yml")
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        yaml.dump(config, f)
+    CONFIG_MAP[model_name] = tmp_path
+
+
+def compute_probabilities_evo2(
+    clinvar_df: pd.DataFrame, model_name: str, batch_size: int = 1,
+) -> Tuple[List[float], List[float]]:
     try:
         from evo2 import Evo2
+        from evo2.scoring import prepare_batch
     except Exception as e:
         raise RuntimeError("Evo2 library not available; install evo2 to use --use_evo2") from e
 
     torch.cuda.set_device(0)
+    _patch_evo2_config_no_flash(model_name)
     model = Evo2(model_name)
 
     base_ids = {}
@@ -348,23 +375,35 @@ def compute_probabilities_evo2(clinvar_df: pd.DataFrame, model_name: str) -> Tup
         ids = model.tokenizer.tokenize(b)
         base_ids[b] = ids[0] if ids else None
 
+    sequences = clinvar_df["sequence"].tolist()
+    refs = clinvar_df["ref"].tolist()
+    alts = clinvar_df["alt"].tolist()
+
     p_ref = []
     p_alt = []
 
-    for i in tqdm(range(len(clinvar_df)), desc="Evo2 Probabilities"):
-        seq = clinvar_df["sequence"][i]
-        ref = clinvar_df["ref"][i]
-        alt = clinvar_df["alt"][i]
+    for i in tqdm(range(0, len(sequences), batch_size), desc="Evo2 VEP batches"):
+        batch_seqs = sequences[i : i + batch_size]
+        batch_refs = refs[i : i + batch_size]
+        batch_alts = alts[i : i + batch_size]
 
-        input_ids = torch.tensor(model.tokenizer.tokenize(seq), dtype=torch.int).unsqueeze(0).to("cuda:0")
-        outputs, _ = model(input_ids)
-        logits = outputs[0][0, -1, :]
-        probs = torch.softmax(logits, dim=0)
+        input_ids, seq_lengths = prepare_batch(
+            batch_seqs, model.tokenizer, device="cuda:0"
+        )
 
-        ref_id = base_ids.get(ref)
-        alt_id = base_ids.get(alt)
-        p_ref.append(float(probs[ref_id]) if ref_id is not None else 0.0)
-        p_alt.append(float(probs[alt_id]) if alt_id is not None else 0.0)
+        with torch.inference_mode():
+            output, _ = model(input_ids)
+            logits = output[0] if isinstance(output, tuple) else output  # (batch, length, vocab)
+
+        for j in range(len(batch_seqs)):
+            # logits at last real token position predicts next token
+            last_logits = logits[j, seq_lengths[j] - 1, :]
+            probs = torch.softmax(last_logits, dim=0)
+
+            ref_id = base_ids.get(batch_refs[j])
+            alt_id = base_ids.get(batch_alts[j])
+            p_ref.append(float(probs[ref_id]) if ref_id is not None else 0.0)
+            p_alt.append(float(probs[alt_id]) if alt_id is not None else 0.0)
 
     return p_ref, p_alt
 
@@ -432,7 +471,7 @@ def main() -> None:
     )
 
     if args.use_evo2:
-        p_ref, p_alt = compute_probabilities_evo2(clinvar_df, args.model)
+        p_ref, p_alt = compute_probabilities_evo2(clinvar_df, args.model, batch_size=args.batch_size)
     else:
         tokenizer = AutoTokenizer.from_pretrained(
             args.model, revision=args.revision, trust_remote_code=True
