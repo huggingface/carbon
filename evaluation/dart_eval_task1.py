@@ -102,6 +102,7 @@ def onehot_to_chars(onehot):
 # PairedControlDataset (inlined from DART-Eval to avoid repo dependency)
 # ---------------------------------------------------------------------------
 
+
 class PairedControlDataset(Dataset):
     """ENCODE cCRE paired-control dataset for zero-shot likelihood evaluation.
 
@@ -176,7 +177,7 @@ class PairedControlDataset(Dataset):
         window = end - start
         seq = np.zeros((window, 4), dtype=np.int8)
         fa = pyfaidx.Fasta(self.genome_fa, one_based_attributes=False)
-        sequence_data = fa[chrom][max(0, start):end]
+        sequence_data = fa[chrom][max(0, start) : end]
         sequence = sequence_data.seq.upper()
         start_adj = sequence_data.start
         end_adj = sequence_data.end
