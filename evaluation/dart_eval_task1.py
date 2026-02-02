@@ -138,8 +138,10 @@ def score_causal(model, tokenizer, seqs_onehot, starts, ends, device):
         for idx, pos in zip(eos_positions[0], eos_positions[1]):
             tok_ends[idx] = pos
     else:
-        tok_ends = attention_mask.sum(dim=1) if attention_mask is not None else torch.full(
-            (tokens.shape[0],), tokens.shape[1], device=device
+        tok_ends = (
+            attention_mask.sum(dim=1)
+            if attention_mask is not None
+            else torch.full((tokens.shape[0],), tokens.shape[1], device=device)
         )
 
     for i in range(lls.shape[1]):
@@ -161,13 +163,11 @@ def evaluate(model, tokenizer, dataloader, out_dir, device, progress_bar=True):
         diffs_lst = []
         corrects_lst = []
 
-        for seqs, ctrls, inds in tqdm(dataloader, disable=(not progress_bar), ncols=120):
-            seq_scores = score_causal(
-                model, tokenizer, seqs, None, None, device
-            )
-            ctrl_scores = score_causal(
-                model, tokenizer, ctrls, None, None, device
-            )
+        for seqs, ctrls, inds in tqdm(
+            dataloader, disable=(not progress_bar), ncols=120
+        ):
+            seq_scores = score_causal(model, tokenizer, seqs, None, None, device)
+            ctrl_scores = score_causal(model, tokenizer, ctrls, None, None, device)
 
             for ind, seq_score, ctrl_score in zip(inds, seq_scores, ctrl_scores):
                 f.write(f"{ind}\t{seq_score}\t{ctrl_score}\n")
@@ -222,8 +222,12 @@ def main():
         args.dart_work_dir or os.environ.get("DART_WORK_DIR", "")
     ).resolve()
 
-    genome_fa_path = dart_work_dir / "refs" / "GRCh38_no_alt_analysis_set_GCA_000001405.15.fasta"
-    elements_tsv_path = dart_work_dir / "task_1_ccre" / "processed_inputs" / "ENCFF420VPZ_processed.tsv"
+    genome_fa_path = (
+        dart_work_dir / "refs" / "GRCh38_no_alt_analysis_set_GCA_000001405.15.fasta"
+    )
+    elements_tsv_path = (
+        dart_work_dir / "task_1_ccre" / "processed_inputs" / "ENCFF420VPZ_processed.tsv"
+    )
 
     if not genome_fa_path.exists() or not elements_tsv_path.exists():
         print(f"Local data not found, downloading from {args.hub_dataset} ...")
@@ -248,15 +252,26 @@ def main():
                 )
                 print(f"  -> {downloaded}")
 
-        genome_fa_path = dart_work_dir / "refs" / "GRCh38_no_alt_analysis_set_GCA_000001405.15.fasta"
-        elements_tsv_path = dart_work_dir / "task_1_ccre" / "processed_inputs" / "ENCFF420VPZ_processed.tsv"
+        genome_fa_path = (
+            dart_work_dir / "refs" / "GRCh38_no_alt_analysis_set_GCA_000001405.15.fasta"
+        )
+        elements_tsv_path = (
+            dart_work_dir
+            / "task_1_ccre"
+            / "processed_inputs"
+            / "ENCFF420VPZ_processed.tsv"
+        )
 
     genome_fa = str(genome_fa_path)
     elements_tsv = str(elements_tsv_path)
 
     model_short = args.model.split("/")[-1]
     out_dir = args.output_dir or str(
-        dart_work_dir / "task_1_ccre" / "zero_shot_outputs" / "likelihoods" / model_short
+        dart_work_dir
+        / "task_1_ccre"
+        / "zero_shot_outputs"
+        / "likelihoods"
+        / model_short
     )
 
     print("=" * 80)

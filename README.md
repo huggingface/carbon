@@ -106,6 +106,26 @@ SLURM:
 sbatch --export=MODEL=/path/to/carbon/model-or-hub-repo,REVISION=checkpoint-10000 evaluation/cds_half_shuffle_eval.slurm
 ```
 
+### DART-Eval Task 1: Prioritizing Known Regulatory Elements (post-training)
+Zero-shot likelihood evaluation from [DART-Eval](https://github.com/kundajelab/DART-Eval). Compares model log-likelihoods on real ENCODE cCRE elements vs dinucleotide-shuffled controls, reporting accuracy and Wilcoxon signed-rank test. Data is auto-downloaded from [hf-carbon/dart-eval-task1](https://huggingface.co/datasets/hf-carbon/dart-eval-task1) (private). Requires the [DART-Eval](https://github.com/kundajelab/DART-Eval) repo cloned locally for `PairedControlDataset`.
+
+Extra dependency: `pip install pyfaidx`
+
+CLI:
+```
+python evaluation/dart_eval_task1.py \
+  --model GenerTeam/GENERator-v2-eukaryote-1.2b-base \
+  --dart_work_dir /path/to/dart_work \
+  --dart_eval_dir /path/to/DART-Eval \
+  --batch_size 512 \
+  --bf16
+```
+
+SLURM:
+```
+sbatch --export=MODEL=GenerTeam/GENERator-v2-eukaryote-1.2b-base evaluation/dart_task1_zero_shot.slurm
+```
+
 ### KEGG DNA-only classifier (post-training)
 This matches the BioReason **DNA-only Evo2** setup: we train a lightweight classifier head on `wanglab/kegg` **with the backbone frozen** and evaluate accuracy/F1 on **val and test splits**.
 
