@@ -82,6 +82,11 @@ def parse_args() -> argparse.Namespace:
         default=0,
         help="Random seed for dinucleotide shuffle",
     )
+    parser.add_argument(
+        "--use_evo2",
+        action="store_true",
+        help="Use Evo2 scoring (official evo2 library) instead of HF AutoModel",
+    )
     return parser.parse_args()
 
 
@@ -255,7 +260,20 @@ def score_causal(model, tokenizer, seqs_onehot, starts, ends, device):
     return out
 
 
-def evaluate(model, tokenizer, dataloader, out_dir, device, progress_bar=True):
+def score_evo2(evo2_model, seqs_onehot, batch_size):
+    """Score sequences using Evo2's native score_sequences API."""
+    seqs_str = onehot_to_chars(seqs_onehot)
+    scores = evo2_model.score_sequences(
+        seqs_str,
+        batch_size=batch_size,
+        reduce_method="mean",
+        average_reverse_complement=False,
+    )
+    return np.array(scores, dtype=np.float64)
+
+
+def evaluate(model, tokenizer, dataloader, out_dir, device, progress_bar=True,
+             use_evo2=False, evo2_model=None, evo2_batch_size=1):
     """Run the paired-control zero-shot evaluation."""
     os.makedirs(out_dir, exist_ok=True)
     scores_path = os.path.join(out_dir, "scores.tsv")
@@ -270,8 +288,12 @@ def evaluate(model, tokenizer, dataloader, out_dir, device, progress_bar=True):
         for seqs, ctrls, inds in tqdm(
             dataloader, disable=(not progress_bar), ncols=120
         ):
-            seq_scores = score_causal(model, tokenizer, seqs, None, None, device)
-            ctrl_scores = score_causal(model, tokenizer, ctrls, None, None, device)
+            if use_evo2:
+                seq_scores = score_evo2(evo2_model, seqs, evo2_batch_size)
+                ctrl_scores = score_evo2(evo2_model, ctrls, evo2_batch_size)
+            else:
+                seq_scores = score_causal(model, tokenizer, seqs, None, None, device)
+                ctrl_scores = score_causal(model, tokenizer, ctrls, None, None, device)
 
             for ind, seq_score, ctrl_score in zip(inds, seq_scores, ctrl_scores):
                 f.write(f"{ind}\t{seq_score}\t{ctrl_score}\n")
@@ -382,20 +404,38 @@ def main():
     print(f"Dataset: {len(dataset)} elements")
 
     # Load model
-    dtype = torch.bfloat16 if args.bf16 else torch.float32
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    model = None
+    tokenizer = None
+    evo2_model = None
 
-    print(f"Loading model ({dtype}) ...")
-    tokenizer = AutoTokenizer.from_pretrained(
-        args.model, trust_remote_code=True, padding_side="right"
-    )
-    model = AutoModelForCausalLM.from_pretrained(
-        args.model, trust_remote_code=True, torch_dtype=dtype
-    ).to(device)
-    model.eval()
+    if args.use_evo2:
+        try:
+            from evo2 import Evo2
+        except ImportError as e:
+            raise RuntimeError(
+                "Evo2 library not available; install evo2 to use --use_evo2"
+            ) from e
+        torch.cuda.set_device(0)
+        print(f"Loading Evo2 model: {model_short} ...")
+        evo2_model = Evo2(model_short)
+    else:
+        dtype = torch.bfloat16 if args.bf16 else torch.float32
+        print(f"Loading model ({dtype}) ...")
+        tokenizer = AutoTokenizer.from_pretrained(
+            args.model, trust_remote_code=True, padding_side="right"
+        )
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model, trust_remote_code=True, torch_dtype=dtype
+        ).to(device)
+        model.eval()
 
     # Run evaluation
-    metrics = evaluate(model, tokenizer, dataloader, out_dir, device)
+    metrics = evaluate(
+        model, tokenizer, dataloader, out_dir, device,
+        use_evo2=args.use_evo2, evo2_model=evo2_model,
+        evo2_batch_size=args.batch_size,
+    )
 
     print("\n" + "=" * 80)
     print(f"Results for {model_short}:")
