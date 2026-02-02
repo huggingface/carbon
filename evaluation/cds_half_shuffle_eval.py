@@ -7,6 +7,7 @@ import time
 import pandas as pd
 import torch
 from datasets import load_dataset
+from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
@@ -110,7 +111,8 @@ def _score_sequences_hf(
     batch_size: int,
 ) -> list:
     scores = []
-    for i in range(0, len(sequences), batch_size):
+    num_batches = (len(sequences) + batch_size - 1) // batch_size
+    for i in tqdm(range(0, len(sequences), batch_size), total=num_batches, desc="Scoring"):
         batch = sequences[i : i + batch_size]
         enc = tokenizer(
             batch,
