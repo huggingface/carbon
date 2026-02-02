@@ -112,7 +112,9 @@ def _score_sequences_hf(
 ) -> list:
     scores = []
     num_batches = (len(sequences) + batch_size - 1) // batch_size
-    for i in tqdm(range(0, len(sequences), batch_size), total=num_batches, desc="Scoring"):
+    for i in tqdm(
+        range(0, len(sequences), batch_size), total=num_batches, desc="Scoring"
+    ):
         batch = sequences[i : i + batch_size]
         enc = tokenizer(
             batch,
@@ -168,7 +170,9 @@ def _score_sequences_evo2(sequences: list, batch_size: int, model_name: str) -> 
     try:
         from evo2 import Evo2
     except Exception as e:
-        raise RuntimeError("Evo2 library not available; install evo2 to use --use_evo2") from e
+        raise RuntimeError(
+            "Evo2 library not available; install evo2 to use --use_evo2"
+        ) from e
     torch.cuda.set_device(0)
     _patch_evo2_config_no_flash(model_name)
     model = Evo2(model_name)

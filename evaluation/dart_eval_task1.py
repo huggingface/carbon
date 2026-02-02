@@ -1,28 +1,29 @@
 """
 DART-Eval Task 1: Prioritizing Known Regulatory Elements (Zero-Shot Likelihood)
 
-Self-contained script that uses the DART-Eval repo's dataset classes but defines
-its own GENERator evaluator, so no modifications to the DART-Eval repo are needed.
+Fully self-contained script — no dependency on the DART-Eval repo.
+Data is auto-downloaded from HF Hub (hf-carbon/dart-eval-task1).
 
 Usage:
     python evaluation/dart_eval_task1.py \
         --model GenerTeam/GENERator-v2-eukaryote-1.2b-base \
         --dart_work_dir /fsx/kashif/dart_work \
-        --dart_eval_dir /fsx/kashif/DART-Eval \
         --batch_size 512 \
         --bf16
 """
 
 import argparse
+import hashlib
 import json
 import os
-import sys
 from pathlib import Path
 
 import numpy as np
+import polars as pl
+import pyfaidx
 import torch
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
+from torch.utils.data import Dataset, DataLoader
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from scipy.stats import wilcoxon
 from tqdm import tqdm
@@ -36,11 +37,6 @@ def parse_args() -> argparse.Namespace:
         "--model",
         required=True,
         help="HF model name or path (e.g., GenerTeam/GENERator-v2-eukaryote-1.2b-base)",
-    )
-    parser.add_argument(
-        "--dart_eval_dir",
-        default=None,
-        help="Path to DART-Eval repo (default: ../DART-Eval)",
     )
     parser.add_argument(
         "--dart_work_dir",
@@ -92,9 +88,116 @@ def parse_args() -> argparse.Namespace:
 ALPHABET = np.array(["A", "C", "G", "T"], dtype="S1")
 
 
+def one_hot_encode(sequence):
+    seq_chararray = np.frombuffer(sequence.encode("UTF-8"), dtype="S1")
+    return (seq_chararray[:, None] == ALPHABET[None, :]).astype(np.int8)
+
+
 def onehot_to_chars(onehot):
     chararray = ALPHABET[np.argmax(onehot, axis=2)]
     return [b"".join(row).decode() for row in chararray]
+
+
+# ---------------------------------------------------------------------------
+# PairedControlDataset (inlined from DART-Eval to avoid repo dependency)
+# ---------------------------------------------------------------------------
+
+class PairedControlDataset(Dataset):
+    """ENCODE cCRE paired-control dataset for zero-shot likelihood evaluation.
+
+    Each item returns (seq_onehot, ctrl_onehot, idx) where ctrl is a
+    dinucleotide-shuffled version of the element region.
+    """
+
+    _elements_dtypes = {
+        "chr": pl.Utf8,
+        "input_start": pl.UInt32,
+        "input_end": pl.UInt32,
+        "ccre_start": pl.UInt32,
+        "ccre_end": pl.UInt32,
+        "ccre_relative_start": pl.Int32,
+        "ccre_relative_end": pl.Int32,
+        "reverse_complement": pl.Boolean,
+    }
+    _seq_tokens = np.array([0, 1, 2, 3], dtype=np.int8)
+    _seed_upper = 2**128
+
+    def __init__(self, genome_fa, elements_tsv, chroms, seed):
+        super().__init__()
+        self.seed = seed
+        self.elements_df = self._load_elements(elements_tsv, chroms)
+        self.genome_fa = genome_fa
+        fa = pyfaidx.Fasta(self.genome_fa)
+        fa.close()
+
+    @classmethod
+    def _load_elements(cls, elements_file, chroms):
+        df = pl.scan_csv(
+            elements_file, separator="\t", quote_char=None, dtypes=cls._elements_dtypes
+        ).with_row_index()
+        if chroms is not None:
+            df = df.filter(pl.col("chr").is_in(chroms))
+        return df.collect()
+
+    @classmethod
+    def _dinuc_shuffle(cls, seq, rng):
+        tokens = (seq * cls._seq_tokens[None, :]).sum(axis=1)
+        shuf_next_inds = []
+        for t in range(4):
+            mask = tokens[:-1] == t
+            inds = np.where(mask)[0]
+            shuf_next_inds.append(inds + 1)
+        for t in range(4):
+            inds = np.arange(len(shuf_next_inds[t]))
+            inds[:-1] = rng.permutation(len(inds) - 1)
+            shuf_next_inds[t] = shuf_next_inds[t][inds]
+        counters = [0, 0, 0, 0]
+        ind = 0
+        result = np.empty_like(tokens)
+        result[0] = tokens[ind]
+        for j in range(1, len(tokens)):
+            t = tokens[ind]
+            ind = shuf_next_inds[t][counters[t]]
+            counters[t] += 1
+            result[j] = tokens[ind]
+        return (result[:, None] == cls._seq_tokens[None, :]).astype(np.int8)
+
+    def __len__(self):
+        return self.elements_df.height
+
+    def __getitem__(self, idx):
+        idx_orig, chrom, start, end, elem_start, elem_end, _, _, rc = (
+            self.elements_df.row(idx)
+        )
+        item_bytes = (self.seed, chrom, elem_start, elem_end).__repr__().encode("utf-8")
+        item_seed = int(hashlib.sha256(item_bytes).hexdigest(), 16) % self._seed_upper
+        rng = np.random.default_rng(item_seed)
+
+        window = end - start
+        seq = np.zeros((window, 4), dtype=np.int8)
+        fa = pyfaidx.Fasta(self.genome_fa, one_based_attributes=False)
+        sequence_data = fa[chrom][max(0, start):end]
+        sequence = sequence_data.seq.upper()
+        start_adj = sequence_data.start
+        end_adj = sequence_data.end
+        fa.close()
+
+        a = start_adj - start
+        b = end_adj - start
+        seq[a:b, :] = one_hot_encode(sequence)
+
+        e_a = max(elem_start - start, a)
+        e_b = min(elem_end - start, b)
+        elem = seq[e_a:e_b, :]
+        shuf = self._dinuc_shuffle(elem, rng)
+        ctrl = seq.copy()
+        ctrl[e_a:e_b, :] = shuf
+
+        if rc:
+            seq = seq[::-1, ::-1].copy()
+            ctrl = ctrl[::-1, ::-1].copy()
+
+        return torch.from_numpy(seq), torch.from_numpy(ctrl), torch.tensor(idx_orig)
 
 
 def score_causal(model, tokenizer, seqs_onehot, starts, ends, device):
@@ -203,19 +306,6 @@ def evaluate(model, tokenizer, dataloader, out_dir, device, progress_bar=True):
 
 def main():
     args = parse_args()
-
-    # Setup DART-Eval repo on PYTHONPATH for PairedControlDataset
-    script_dir = Path(__file__).resolve().parent
-    dart_eval_dir = (
-        Path(args.dart_eval_dir).resolve()
-        if args.dart_eval_dir
-        else (script_dir.parent.parent / "DART-Eval").resolve()
-    )
-    dart_src = dart_eval_dir / "src"
-    if str(dart_src) not in sys.path:
-        sys.path.insert(0, str(dart_src))
-
-    from dnalm_bench.task_1_paired_control.components import PairedControlDataset
 
     # Resolve work dir — download from Hub if needed
     dart_work_dir = Path(

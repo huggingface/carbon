@@ -107,16 +107,15 @@ sbatch --export=MODEL=/path/to/carbon/model-or-hub-repo,REVISION=checkpoint-1000
 ```
 
 ### DART-Eval Task 1: Prioritizing Known Regulatory Elements (post-training)
-Zero-shot likelihood evaluation from [DART-Eval](https://github.com/kundajelab/DART-Eval). Compares model log-likelihoods on real ENCODE cCRE elements vs dinucleotide-shuffled controls, reporting accuracy and Wilcoxon signed-rank test. Data is auto-downloaded from [hf-carbon/dart-eval-task1](https://huggingface.co/datasets/hf-carbon/dart-eval-task1) (private). Requires the [DART-Eval](https://github.com/kundajelab/DART-Eval) repo cloned locally for `PairedControlDataset`.
+Zero-shot likelihood evaluation from [DART-Eval](https://github.com/kundajelab/DART-Eval). Compares model log-likelihoods on real ENCODE cCRE elements vs dinucleotide-shuffled controls, reporting accuracy and Wilcoxon signed-rank test. Data is auto-downloaded from [hf-carbon/dart-eval-task1](https://huggingface.co/datasets/hf-carbon/dart-eval-task1) (private).
 
-Extra dependency: `pip install pyfaidx`
+Extra dependencies: `pip install pyfaidx polars`
 
 CLI:
 ```
 python evaluation/dart_eval_task1.py \
   --model GenerTeam/GENERator-v2-eukaryote-1.2b-base \
   --dart_work_dir /path/to/dart_work \
-  --dart_eval_dir /path/to/DART-Eval \
   --batch_size 512 \
   --bf16
 ```
