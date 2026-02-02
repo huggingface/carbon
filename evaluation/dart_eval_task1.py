@@ -272,8 +272,17 @@ def score_evo2(evo2_model, seqs_onehot, batch_size):
     return np.array(scores, dtype=np.float64)
 
 
-def evaluate(model, tokenizer, dataloader, out_dir, device, progress_bar=True,
-             use_evo2=False, evo2_model=None, evo2_batch_size=1):
+def evaluate(
+    model,
+    tokenizer,
+    dataloader,
+    out_dir,
+    device,
+    progress_bar=True,
+    use_evo2=False,
+    evo2_model=None,
+    evo2_batch_size=1,
+):
     """Run the paired-control zero-shot evaluation."""
     os.makedirs(out_dir, exist_ok=True)
     scores_path = os.path.join(out_dir, "scores.tsv")
@@ -432,8 +441,13 @@ def main():
 
     # Run evaluation
     metrics = evaluate(
-        model, tokenizer, dataloader, out_dir, device,
-        use_evo2=args.use_evo2, evo2_model=evo2_model,
+        model,
+        tokenizer,
+        dataloader,
+        out_dir,
+        device,
+        use_evo2=args.use_evo2,
+        evo2_model=evo2_model,
         evo2_batch_size=args.batch_size,
     )
 
