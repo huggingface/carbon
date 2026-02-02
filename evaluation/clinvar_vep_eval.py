@@ -358,13 +358,17 @@ def _patch_evo2_config_no_flash(model_name: str) -> None:
 
 
 def compute_probabilities_evo2(
-    clinvar_df: pd.DataFrame, model_name: str, batch_size: int = 1,
+    clinvar_df: pd.DataFrame,
+    model_name: str,
+    batch_size: int = 1,
 ) -> Tuple[List[float], List[float]]:
     try:
         from evo2 import Evo2
         from evo2.scoring import prepare_batch
     except Exception as e:
-        raise RuntimeError("Evo2 library not available; install evo2 to use --use_evo2") from e
+        raise RuntimeError(
+            "Evo2 library not available; install evo2 to use --use_evo2"
+        ) from e
 
     torch.cuda.set_device(0)
     _patch_evo2_config_no_flash(model_name)
@@ -393,7 +397,9 @@ def compute_probabilities_evo2(
 
         with torch.inference_mode():
             output, _ = model(input_ids)
-            logits = output[0] if isinstance(output, tuple) else output  # (batch, length, vocab)
+            logits = (
+                output[0] if isinstance(output, tuple) else output
+            )  # (batch, length, vocab)
 
         for j in range(len(batch_seqs)):
             # logits at last real token position predicts next token
@@ -471,7 +477,9 @@ def main() -> None:
     )
 
     if args.use_evo2:
-        p_ref, p_alt = compute_probabilities_evo2(clinvar_df, args.model, batch_size=args.batch_size)
+        p_ref, p_alt = compute_probabilities_evo2(
+            clinvar_df, args.model, batch_size=args.batch_size
+        )
     else:
         tokenizer = AutoTokenizer.from_pretrained(
             args.model, revision=args.revision, trust_remote_code=True
