@@ -27,4 +27,136 @@ Datasets are available on the hub: [hf-carbon/natural-plasmids](https://huggingf
 For large scale pretraining we use [nanotron](https://github.com/huggingface/nanotron/tree/main) library.
 
 ## Evaluation
-Kashif's fork of Gnerator to run Sequence Recovery benchmark on our cluster: https://github.com/kashif/GENERator/tree/evals
+
+### Sequence Recovery 
+We provide a standalone eval script that runs Sequence Recovery after training against a **Hub model + revision** and saves results to Parquet (plus a JSON summary). Sequence Recovery is a **training-free generative eval**: given a fixed-length DNA context, the model generates the next segment and we score **exact-base recovery accuracy** (overall + type-wise).
+`--data_type` selects the dataset split: `eukaryote`, `bacteria`, or `others`.
+
+CLI:
+```
+python evaluation/sequence_recovery_eval.py \
+  --model /path/to/carbon/model-or-hub-repo \
+  --revision checkpoint-10000 \
+  --data_type eukaryote \
+  --output_dir ./eval_results/sequence_recovery \
+  --bf16
+```
+For official Evo2 weights, add `--use_evo2` (and optionally `--gen_len_bp 30`).
+
+SLURM:
+```
+sbatch --export=MODEL=/path/to/carbon/model-or-hub-repo,REVISION=checkpoint-10000,DATA_TYPE=eukaryote evaluation/sequence_recovery_eval.slurm
+```
+
+Optional upload:
+```
+python evaluation/sequence_recovery_eval.py \
+  --model /path/to/carbon/model-or-hub-repo \
+  --revision checkpoint-10000 \
+  --data_type eukaryote \
+  --output_dir ./eval_results/sequence_recovery \
+  --bf16 \
+  --push_to_hub \
+  --hub_repo_id hf-carbon/seq-recovery-results
+```
+
+### ClinVar VEP (post-training)
+ClinVar VEP evaluates variant effect prediction by scoring **ref vs alt alleles** in long genomic context and reporting **AUROC/AUPRC**.
+
+CLI:
+```
+python evaluation/clinvar_vep_eval.py \
+  --model /path/to/carbon/model-or-hub-repo \
+  --revision checkpoint-10000 \
+  --context_length 96000 \
+  --output_dir ./eval_results/clinvar_vep \
+  --bf16
+```
+For official Evo2 weights, add `--use_evo2`.
+
+SLURM:
+```
+sbatch --export=MODEL=/path/to/carbon/model-or-hub-repo,REVISION=checkpoint-10000,CONTEXT_LEN=96000 evaluation/clinvar_vep_eval.slurm
+```
+
+### CDS half-shuffle discrimination (post-training)
+This task evaluates whether a model assigns higher likelihood to **real CDS sequences** vs **half-shuffled negatives** (first half fixed, second half shuffled). The dataset lives at `hf-carbon/carbon_tasks` and uses fixed column names (`original_sequence`, `input`).
+For the current dataset, `original_sequence` is the real CDS and `input` is the half-shuffled control.
+
+CLI:
+```
+python evaluation/cds_half_shuffle_eval.py \
+  --model /path/to/carbon/model-or-hub-repo \
+  --revision checkpoint-10000 \
+  --dataset hf-carbon/carbon_tasks \
+  --split train \
+  --output_dir ./eval_results/cds_half_shuffle \
+  --bf16
+```
+Dataset columns example:
+```
+record_id, taxonomy, gene_type, species_type, original_sequence, length, label, input, __index_level_0__
+```
+In this dataset, `original_sequence` is the real CDS and `input` is the half-shuffled control.
+The dataset currently provides a single `train` split with ~30K rows (config: `default`).
+For official Evo2 weights, add `--use_evo2` and pass the Evo2 model name (e.g., `evo2_1b_base`).
+
+SLURM:
+```
+sbatch --export=MODEL=/path/to/carbon/model-or-hub-repo,REVISION=checkpoint-10000 evaluation/cds_half_shuffle_eval.slurm
+```
+
+### DART-Eval Task 1: Prioritizing Known Regulatory Elements (post-training)
+Zero-shot likelihood evaluation from [DART-Eval](https://github.com/kundajelab/DART-Eval). Compares model log-likelihoods on real ENCODE cCRE elements vs dinucleotide-shuffled controls, reporting accuracy and Wilcoxon signed-rank test. Data is auto-downloaded from [hf-carbon/dart-eval-task1](https://huggingface.co/datasets/hf-carbon/dart-eval-task1) (private).
+
+Extra dependencies: `pip install pyfaidx polars`
+
+CLI:
+```
+python evaluation/dart_eval_task1.py \
+  --model GenerTeam/GENERator-v2-eukaryote-1.2b-base \
+  --dart_work_dir /path/to/dart_work \
+  --batch_size 512 \
+  --bf16
+```
+
+SLURM:
+```
+sbatch --export=MODEL=GenerTeam/GENERator-v2-eukaryote-1.2b-base evaluation/dart_task1_zero_shot.slurm
+```
+
+### KEGG DNA-only classifier (post-training)
+This matches the BioReason **DNA-only Evo2** setup: we train a lightweight classifier head on `wanglab/kegg` **with the backbone frozen** and evaluate accuracy/F1 on **val and test splits**.
+
+CLI:
+```
+python evaluation/kegg_dna_classifier_train.py \
+  --model /path/to/carbon/model-or-hub-repo \
+  --revision checkpoint-10000 \
+  --max_epochs 5 \
+  --batch_size 1 \
+  --max_length 2048 \
+  --truncate_dna_per_side 1024 \
+  --merge_val_test_set \
+  --bf16
+```
+
+SLURM:
+```
+sbatch --export=MODEL=/path/to/carbon/model-or-hub-repo,REVISION=checkpoint-10000 kegg_dna_classifier_train.slurm
+```
+
+Optional upload:
+```
+python evaluation/kegg_dna_classifier_train.py \
+  --model /path/to/carbon/model-or-hub-repo \
+  --revision checkpoint-10000 \
+  --max_epochs 5 \
+  --batch_size 1 \
+  --max_length 2048 \
+  --truncate_dna_per_side 1024 \
+  --merge_val_test_set \
+  --bf16 \
+  --push_to_hub \
+  --hub_repo_id hf-carbon/kegg-dna-classifier-results
+```
