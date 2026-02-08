@@ -59,7 +59,7 @@ class HybridTokenizer:
         bases = ['A', 'T', 'C', 'G']
         
         # DNA special tokens
-        self.dna_special_tokens = ["<dna>", "</dna>", "<oov>"]
+        self.dna_special_tokens = ["<dna>", "</dna>", "<oov>", "<s>"]
         
         # Generate k-mer combinations
         kmers = [''.join(kmer) for kmer in itertools.product(bases, repeat=self.k)]
@@ -85,7 +85,7 @@ class HybridTokenizer:
         # Set DNA special token IDs
         self.dna_begin_token_id = self.dna_token_to_id["<dna>"]
         self.dna_end_token_id = self.dna_token_to_id["</dna>"]
-        self.oov_token_id = self.dna_token_to_id["<oov>"]
+        self.dna_oov_token_id = self.dna_token_to_id["<oov>"]
     
     def _extend_vocab(self):
         """Extend vocabulary to include DNA tokens."""
@@ -104,7 +104,15 @@ class HybridTokenizer:
     def __len__(self):
         """Return vocabulary size."""
         return self.vocab_size
-    
+
+    @property
+    def dna_kmer_start_id(self) -> int:
+        return self.dna_start_id + len(self.dna_special_tokens)
+
+    @property
+    def dna_kmer_end_id(self) -> int:
+        return self.dna_start_id + self.dna_vocab_size
+
     def get_vocab(self):
         """Get vocabulary."""
         return self.vocab.copy()
@@ -327,7 +335,7 @@ class HybridTokenizer:
                 if has_start_tag:
                     token_ids.append(self.dna_begin_token_id)
                     if return_token_mask:
-                        token_mask.append(0)  # DNA special token
+                        token_mask.append(0)  # DNA special token: <dna>
                 
                 # Process DNA sequence if there's content
                 if dna_content:
@@ -335,12 +343,12 @@ class HybridTokenizer:
                     
                     # Add DNA kmer tokens
                     for idx, kmer_token in enumerate(result["kmer_tokens"]):
-                        token_id = self.dna_token_to_id.get(kmer_token, self.oov_token_id)
+                        token_id = self.dna_token_to_id.get(kmer_token, self.dna_oov_token_id)
                         token_ids.append(token_id)
                         
                         if return_token_mask:
-                            if kmer_token == "<oov>":
-                                token_mask.append(0)  # OOV special token
+                            if kmer_token in ["<oov>", "<s>"]:
+                                token_mask.append(0)  # DNA special token: <oov> or <s>
                             elif idx == len(result["kmer_tokens"]) - 1 and result["padding_length"] > 0:
                                 # Last token with padding
                                 valid_length = result["valid_length"]
@@ -353,7 +361,7 @@ class HybridTokenizer:
                 if has_end_tag:
                     token_ids.append(self.dna_end_token_id)
                     if return_token_mask:
-                        token_mask.append(0)  # DNA special token
+                        token_mask.append(0)  # DNA special token: </dna>
             else:
                 # Use base tokenizer for normal text
                 base_ids = self.base_tokenizer.encode(
@@ -707,7 +715,7 @@ class HybridTokenizer:
         # Set DNA special token IDs
         instance.dna_begin_token_id = instance.dna_token_to_id["<dna>"]
         instance.dna_end_token_id = instance.dna_token_to_id["</dna>"]
-        instance.oov_token_id = instance.dna_token_to_id["<oov>"]
+        instance.dna_oov_token_id = instance.dna_token_to_id["<oov>"]
         
         # Extend vocabulary
         instance._extend_vocab()
