@@ -73,6 +73,12 @@ model:
     use_cache: true
     vocab_size: 32000
     no_rope_layer: null
+    # Hybrid BP loss (disabled by default; enable only with a compatible k-mer tokenizer)
+    hybrid_bp_loss_enabled: false
+    hybrid_bp_loss_k: 6
+    hybrid_bp_dna_kmer_start_id: null
+    hybrid_bp_dna_kmer_end_id: null
+    hybrid_bp_weight_special_ce: 1.0
 optimizer:
   accumulate_grad_in_fp32: true
   clip_grad: 1.0

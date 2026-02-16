@@ -38,6 +38,9 @@ export FORCE_UPDATE_CACHE_S3=1
 
 export TMPDIR=/scratch
 export CUDA_DEVICE_MAX_CONNECTIONS="1"
+export HYBRID_BP_DNA_KMER_START_ID=${HYBRID_BP_DNA_KMER_START_ID:--1}
+export HYBRID_BP_DNA_KMER_END_ID=${HYBRID_BP_DNA_KMER_END_ID:--1}
+export HYBRID_BP_K=${HYBRID_BP_K:-6}
 
 module load cuda/12.4
 source /fsx/loubna/.venv-2-6-cu124/bin/activate
@@ -92,4 +95,3 @@ srun $SRUN_ARGS -u bash -c "$LAUNCHER --node_rank $SLURM_PROCID --role $SLURMD_N
 
 
 echo "END TIME: $(date)"
-

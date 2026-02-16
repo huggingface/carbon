@@ -7,6 +7,9 @@ You can tokenize the data using [datatrove](https://github.com/huggingface/datat
 
 Please refer to [nanotron](https://github.com/huggingface/nanotron/) for detailed instructions on setting up your training environment and launching jobs. For training, we use SmolLM3 nanotron [branch](https://github.com/huggingface/nanotron/tree/smollm3), and we use this [branch](https://github.com/huggingface/datatrove/tree/nouamane/avoid-s3) of [datatrove](https://github.com/huggingface/datatrove).
 
+### Legacy trainer note
+`nanotron_training/example/FNSTrainer.py` is an example Hugging Face `Trainer`-based BP-loss prototype and is not used by Nanotron training jobs. The active hybrid BP integration now lives in the Nanotron branch (`src/nanotron/models/qwen.py` + `src/nanotron/data/clm_collator.py`).
+
 Below is an example of launching a training on 1 node (you can change the DP value and batch size in the config to change the number of GPUs) and run:
 
 ```bash

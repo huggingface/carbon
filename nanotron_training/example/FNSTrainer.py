@@ -1,8 +1,6 @@
 from transformers import Trainer
 import torch
 import torch.nn.functional as F
-import random
-import numpy as np
 
 class BPTrainer(Trainer):
     """
@@ -23,8 +21,10 @@ class BPTrainer(Trainer):
         kwargs.pop("tokenizer", None)
         super().__init__(**kwargs)
 
+        if processing_class is None:
+            raise ValueError("BPTrainer requires `processing_class` (HybridTokenizer-like instance).")
         self.dna_tokenizer = processing_class
-        self.bp_loss_only = True
+        self.bp_loss_only = bp_loss_only
 
         # Cached tensors built once and reused across steps
         self._special_ids = None               # [N_special]
@@ -113,15 +113,12 @@ class BPTrainer(Trainer):
         special_count = special_mask.sum()
         total_count = bp_count + special_count
 
-        if total_count == 0:
+        if total_count.item() == 0:
             total_loss = torch.tensor(0.0, device=device)
         else:
             total_loss = (
                 bp_loss * bp_count + token_loss * special_count
             ) / total_count
-
-        # Match HuggingFace Trainer's gradient accumulation behavior
-        total_loss = total_loss / self.args.gradient_accumulation_steps
 
         # Optional mode: return BP loss only (useful for diagnostics)
         if self.bp_loss_only:
@@ -146,26 +143,41 @@ class BPTrainer(Trainer):
             model = model.module
 
         vocab_size = model.config.vocab_size
-        device = model.device
+        try:
+            device = next(model.parameters()).device
+        except StopIteration:
+            device = torch.device("cpu")
+
+        special_tokens = getattr(self.dna_tokenizer, "special_tokens", None)
+        if special_tokens is None:
+            special_tokens = getattr(self.dna_tokenizer, "dna_special_tokens", [])
+        special_ids = []
+        for tok in special_tokens:
+            tid = self.dna_tokenizer.vocab.get(tok, None)
+            if tid is not None:
+                special_ids.append(tid)
 
         # Cache ids of all special tokens
-        self._special_ids = torch.tensor(
-            [self.dna_tokenizer.vocab[e] for e in self.dna_tokenizer.special_tokens],
-            dtype=torch.long,
-            device=device
-        )
+        self._special_ids = torch.tensor(special_ids, dtype=torch.long, device=device)
+
+        ids_to_tokens = getattr(self.dna_tokenizer, "ids_to_tokens", None)
+        if ids_to_tokens is None:
+            ids_to_tokens = getattr(self.dna_tokenizer, "id_to_token", None)
+        if ids_to_tokens is None:
+            raise ValueError("Tokenizer must expose `ids_to_tokens` or `id_to_token`.")
 
         # Build nucleotide index table: [V, k]
         # Each row corresponds to a token, each column to a base position
         indices = torch.zeros(vocab_size, k, dtype=torch.long, device=device)
         for tid in range(vocab_size):
-            tok = self.dna_tokenizer.ids_to_tokens[tid]
-            if tok in self.dna_tokenizer.special_tokens:
-                indices[tid] = 0
-            else:
-                seq = tok[:k]
-                idx = [self._nucleotide_map.get(c, 0) for c in seq]
+            tok = ids_to_tokens.get(tid, "")
+            if not isinstance(tok, str):
+                tok = str(tok)
+            if len(tok) >= k and all(c in self._nucleotide_map for c in tok[:k]):
+                idx = [self._nucleotide_map[c] for c in tok[:k]]
                 indices[tid] = torch.tensor(idx, dtype=torch.long, device=device)
+            else:
+                indices[tid] = 0
 
         self._nucleotide_indices = indices
 
@@ -189,8 +201,9 @@ class BPTrainer(Trainer):
             # --------------------------------------------------------------
             # 1) Ground-truth nucleotide indices at this position
             # --------------------------------------------------------------
+            safe_labels = shift_labels.masked_fill(~regular_mask, 0)
             target_nt = self._nucleotide_indices[
-                shift_labels, pos
+                safe_labels, pos
             ].masked_fill(~regular_mask, -100)          # [B, S]
 
             # --------------------------------------------------------------
