@@ -13,10 +13,17 @@ Please refer to [nanotron](https://github.com/huggingface/nanotron/) for detaile
 ### Tail-aware `token_mask` requirement (important)
 For BP-level training on k-mer tokenized DNA, the final (tail) token may represent fewer than `k` valid base pairs. If this is not encoded, loss will incorrectly supervise padded bases.
 
-Expected `token_mask` semantics per token:
-- `-1`: non-DNA/base tokens
-- `0`: DNA special tokens
-- `1..k`: number of valid supervised bases for that token
+We intentionally do **not** encode valid bp length in DNA k-mer labels.  
+The valid supervised bp length is carried by `token_mask`, which is the preferred design.
+
+`token_mask` semantics (**must be shifted exactly like `label_ids`**):
+- `-2`: padding (`<pad>` produced by tokenizer padding)
+- `-1`: natural language token (token-level CE)
+- `0`: DNA special / ignored token (`<dna>`, `</dna>`, `<oov>`, etc.; no loss)
+- `1..k`: DNA k-mer token (BP marginalization), value is `valid_len`
+  - Tail A-padding is excluded by `valid_len`
+  - A full 6-mer token has `token_mask == 6`
+  - A tail token with 4 padded `A` bases (2 valid bp) has `token_mask == 2`
 
 Current Nanotron collator behavior (in the Nanotron `carbon` branch):
 - If dataset examples contain `token_mask`, collator uses it (preferred, tail-aware).
@@ -27,6 +34,8 @@ Current Nanotron collator behavior (in the Nanotron `carbon` branch):
 
 Recommendation:
 - Add `token_mask` during tokenization/preprocessing and store it in the training dataset to preserve correct tail supervision.
+- Ensure `token_mask` is passed by the dataloader and shifted identically to `label_ids`.
+- Keep tokenizer-side tests for this contract (see `tokenizer/tail_mask_test.py`, especially Cell 4/5 checks).
 
 ### Hybrid BP preflight
 Before launching hybrid BP training (`hybrid_bp_loss_enabled: true`), validate tokenizer semantics and export the k-mer id range:
