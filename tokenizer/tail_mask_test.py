@@ -1,10 +1,9 @@
 import torch
-import torch.nn as nn
 import torch.distributed as dist
 import os
-from unittest.mock import Mock, patch
 import numpy as np
-from hybrid_loss import *
+from hybrid_loss import HybridLoss
+from hybrid_tokenizer import HybridTokenizer
 
 # ============================================================================
 # Cell 1: Initialize distributed environment and create real process group
@@ -132,8 +131,8 @@ test_label_ids = torch.tensor([
     kmer_start_id + 2   # AAAAAC
 ])
 
-# Case 1: valid k-mers
-token_mask = torch.tensor([6, 6, 6])  # Test different lengths
+# Case 1: full k-mers
+token_mask = torch.tensor([6, 6, 6], dtype=torch.long)
 
 # Ensure cache is built
 loss_fn._maybe_build_local_cache(test_logits.device, test_vocab_local)
@@ -143,12 +142,13 @@ bp_sum, bp_count = loss_fn._bp_nll_sum_and_count(
     test_logits, test_label_ids, token_mask
 )
 
-print(f"✓ _bp_nll_sum_and_count calculation completed")
+print("✓ _bp_nll_sum_and_count calculation completed")
 print(f"  bp_sum: {bp_sum.item():.6f}")
 print(f"  bp_count: {bp_count.item()}")
-
-print(f"Expected mean CE loss: Log(test_vocab_local)/k = {np.log(test_vocab_local)/k}")
-print(f"Actual mean CE loss: {bp_sum.item() / bp_count.item()}")
+assert bp_count.item() == int(token_mask.sum().item()), "bp_count must equal sum(valid_len)"
+print(f"Expected bp_count: {token_mask.sum().item()}, actual bp_count: {bp_count.item()}")
+print(f"Approx reference under near-uniform nt mass: log(4)={np.log(4):.6f}")
+print(f"Actual mean BP NLL: {bp_sum.item() / bp_count.item():.6f}")
 
 outputs = loss_fn(
     sharded_logits=test_logits,
@@ -157,16 +157,19 @@ outputs = loss_fn(
     token_mask=token_mask.unsqueeze(0)
 )
 
-print(f"✓ HybridLoss forward calculation completed")
-print(outputs['loss'] == bp_sum/bp_count)
+print("✓ HybridLoss forward calculation completed")
+assert torch.allclose(outputs["loss"], bp_sum / bp_count.to(bp_sum.dtype), atol=1e-6), (
+    "Forward loss should match bp_sum/bp_count in all-DNA case"
+)
+print("✓ Forward loss matches bp_sum/bp_count (all-DNA case)")
 
 
 
 
 
 
-# Case 2: invalid k-mers
-token_mask = torch.tensor([6, 6, 1])  # Test different lengths
+# Case 2: one tail token (valid_len=1)
+token_mask = torch.tensor([6, 6, 1], dtype=torch.long)
 
 # Ensure cache is built
 loss_fn._maybe_build_local_cache(test_logits.device, test_vocab_local)
@@ -176,12 +179,12 @@ bp_sum, bp_count = loss_fn._bp_nll_sum_and_count(
     test_logits, test_label_ids, token_mask
 )
 
-print(f"✓ _bp_nll_sum_and_count calculation completed")
+print("✓ _bp_nll_sum_and_count calculation completed")
 print(f"  bp_sum: {bp_sum.item():.6f}")
 print(f"  bp_count: {bp_count.item()}")
-
-print(f"Expected mean CE loss: Log(test_vocab_local)/k = {np.log(test_vocab_local)/k}")
-print(f"Actual mean CE loss: {bp_sum.item() / bp_count.item()}")
+assert bp_count.item() == int(token_mask.sum().item()), "bp_count must equal sum(valid_len)"
+print(f"Expected bp_count: {token_mask.sum().item()}, actual bp_count: {bp_count.item()}")
+print(f"Actual mean BP NLL: {bp_sum.item() / bp_count.item():.6f}")
 
 outputs = loss_fn(
     sharded_logits=test_logits,
@@ -190,15 +193,16 @@ outputs = loss_fn(
     token_mask=token_mask.unsqueeze(0)
 )
 
-print(f"✓ HybridLoss forward calculation completed")
-print(outputs['loss'] == bp_sum/bp_count)
+print("✓ HybridLoss forward calculation completed")
+assert torch.allclose(outputs["loss"], bp_sum / bp_count.to(bp_sum.dtype), atol=1e-6), (
+    "Forward loss should match bp_sum/bp_count in all-DNA case with tail token"
+)
+print("✓ Forward loss matches bp_sum/bp_count (tail-token case)")
 
 
 # ============================================================================
 # Cell 5: Token Mask in Real Example
 # ============================================================================
-
-from hybrid_tokenizer import HybridTokenizer
 
 # Initialize tokenizer
 tokenizer = HybridTokenizer(
@@ -222,6 +226,20 @@ inputs = tokenizer(
 print(f"input_ids: {inputs['input_ids']}")
 print(f"attention_mask: {inputs['attention_mask']}")
 print(f"token_mask: {inputs['token_mask']}")
+
+# Validate tokenizer-side semantics and shift alignment contract used by CLM loss
+input_ids = inputs["input_ids"]
+token_mask = inputs["token_mask"]
+assert input_ids.shape == token_mask.shape, "token_mask shape must match input_ids shape"
+
+label_ids = input_ids[:, 1:]
+label_token_mask = token_mask[:, 1:]
+assert label_ids.shape == label_token_mask.shape, "shifted token_mask must align with shifted labels"
+
+tm = label_token_mask[0].tolist()
+assert any(v == 3 for v in tm), "TTT tail should produce one token with valid_len=3 for k=6"
+assert all(v in {-2, -1, 0, 1, 2, 3, 4, 5, 6} for v in tm), "Invalid token_mask value detected"
+print("✓ Shift-alignment checks passed")
 
 
 # Clean up distributed environment

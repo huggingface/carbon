@@ -38,9 +38,22 @@ export FORCE_UPDATE_CACHE_S3=1
 
 export TMPDIR=/scratch
 export CUDA_DEVICE_MAX_CONNECTIONS="1"
-export HYBRID_BP_DNA_KMER_START_ID=${HYBRID_BP_DNA_KMER_START_ID:--1}
-export HYBRID_BP_DNA_KMER_END_ID=${HYBRID_BP_DNA_KMER_END_ID:--1}
-export HYBRID_BP_K=${HYBRID_BP_K:-6}
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export ENABLE_HYBRID_BP=${ENABLE_HYBRID_BP:-0}
+if [[ "${ENABLE_HYBRID_BP}" == "1" ]]; then
+    : "${HYBRID_BP_DNA_KMER_START_ID:?HYBRID_BP_DNA_KMER_START_ID must be set when ENABLE_HYBRID_BP=1}"
+    : "${HYBRID_BP_DNA_KMER_END_ID:?HYBRID_BP_DNA_KMER_END_ID must be set when ENABLE_HYBRID_BP=1}"
+    export HYBRID_BP_K=${HYBRID_BP_K:-6}
+    if [[ -n "${HYBRID_BP_TOKENIZER_PATH:-}" ]]; then
+        python "$SCRIPT_DIR/verify_token_mask_sample.py" \
+            --tokenizer_path "${HYBRID_BP_TOKENIZER_PATH}" \
+            --k "${HYBRID_BP_K}"
+    fi
+else
+    export HYBRID_BP_DNA_KMER_START_ID=-1
+    export HYBRID_BP_DNA_KMER_END_ID=-1
+    export HYBRID_BP_K=6
+fi
 
 module load cuda/12.4
 source /fsx/loubna/.venv-2-6-cu124/bin/activate
