@@ -79,7 +79,7 @@ for i in range(4**k):
 
 print(f"\nCreated {len(dna_id_to_token)} DNA token mappings")
 print(f"Special tokens: {dna_special_tokens}")
-print(f"k-mer examples: AAAAAA->{kmer_start_id}, TTTTTT->{kmer_start_id+21}")
+print(f"k-mer examples: AAAAAA->{kmer_start_id}, TTTTTT->{kmer_start_id+4096}")
 
 # ============================================================================
 # Cell 3: Create HybridLoss instance
