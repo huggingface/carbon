@@ -49,7 +49,7 @@ tp_group = init_distributed_for_testing()
 
 # Parameters
 k = 6  # k-mer length (changed from 3 to 6)
-dna_start_id = 128
+dna_start_id = 128  # number of NL tokens
 dna_vocab_size = 4100  # 4^6 = 4096 k-mers + 4 special tokens
 dna_special_tokens = ["<dna>", "</dna>", "<oov>", "<s>"]
 
@@ -79,7 +79,8 @@ for i in range(4**k):
 
 print(f"\nCreated {len(dna_id_to_token)} DNA token mappings")
 print(f"Special tokens: {dna_special_tokens}")
-print(f"k-mer examples: AAAAAA->{kmer_start_id}, TTTTTT->{kmer_start_id+4096}")
+print(f"k-mer examples: {kmer_start_id}->{dna_id_to_token[kmer_start_id]}, \
+      {kmer_start_id+1}->{dna_id_to_token[kmer_start_id+1]}")
 
 # ============================================================================
 # Cell 3: Create HybridLoss instance
@@ -132,14 +133,14 @@ test_label_ids = torch.tensor([
 ])
 
 # Case 1: valid k-mers
-test_valid_len = torch.tensor([6, 6, 6])  # Test different lengths
+token_mask = torch.tensor([6, 6, 6])  # Test different lengths
 
 # Ensure cache is built
 loss_fn._maybe_build_local_cache(test_logits.device, test_vocab_local)
 
 # Calculate bp loss
 bp_sum, bp_count = loss_fn._bp_nll_sum_and_count(
-    test_logits, test_label_ids, test_valid_len
+    test_logits, test_label_ids, token_mask
 )
 
 print(f"✓ _bp_nll_sum_and_count calculation completed")
@@ -153,7 +154,7 @@ outputs = loss_fn(
     sharded_logits=test_logits,
     label_ids=test_label_ids.unsqueeze(0),
     label_mask=torch.ones_like(test_label_ids).unsqueeze(0),
-    token_mask=test_valid_len.unsqueeze(0)
+    token_mask=token_mask.unsqueeze(0)
 )
 
 print(f"✓ HybridLoss forward calculation completed")
@@ -165,14 +166,14 @@ print(outputs['loss'] == bp_sum/bp_count)
 
 
 # Case 2: invalid k-mers
-test_valid_len = torch.tensor([6, 6, 1])  # Test different lengths
+token_mask = torch.tensor([6, 6, 1])  # Test different lengths
 
 # Ensure cache is built
 loss_fn._maybe_build_local_cache(test_logits.device, test_vocab_local)
 
 # Calculate bp loss
 bp_sum, bp_count = loss_fn._bp_nll_sum_and_count(
-    test_logits, test_label_ids, test_valid_len
+    test_logits, test_label_ids, token_mask
 )
 
 print(f"✓ _bp_nll_sum_and_count calculation completed")
@@ -186,7 +187,7 @@ outputs = loss_fn(
     sharded_logits=test_logits,
     label_ids=test_label_ids.unsqueeze(0),
     label_mask=torch.ones_like(test_label_ids).unsqueeze(0),
-    token_mask=test_valid_len.unsqueeze(0)
+    token_mask=token_mask.unsqueeze(0)
 )
 
 print(f"✓ HybridLoss forward calculation completed")
