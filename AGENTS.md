@@ -4,4 +4,5 @@
 
 ## Debugging
 
+* Use one of the virual envs in `evaluation` for running code
 * Use the `scratch` folder to store local test scripts or files.
