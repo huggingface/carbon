@@ -162,7 +162,7 @@ def main() -> None:
         weight_decay=args.weight_decay,
         num_train_epochs=args.max_epochs,
         max_steps=args.max_steps,
-        evaluation_strategy="epoch",
+        eval_strategy="epoch",
         save_strategy="epoch",
         logging_steps=10,
         bf16=args.bf16,

@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "carbon-evals"
+version = "0.0.0"
+description = "Dependencies for Carbon evaluation scripts"
+requires-python = ">=3.12"
+readme = "README.md"
+dependencies = [
+  "transformers",
+  "datasets",
+  "accelerate",
+  "vllm",
+  "numpy",
+  "pandas",
+  "pyarrow",
+  "polars",
+  "pyfaidx",
+  "scipy",
+  "scikit-learn",
+  "tqdm",
+  "huggingface_hub",
+]
+
+[project.optional-dependencies]
+evo2 = [
+  "evo2",
+  "pyyaml",
+]
+
+[tool.setuptools]
+packages = []
