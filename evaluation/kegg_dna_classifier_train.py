@@ -150,6 +150,7 @@ def main() -> None:
         num_labels=len(label2id),
         id2label={v: k for k, v in label2id.items()},
         label2id=label2id,
+        ignore_mismatched_sizes=True,
     )
 
     freeze_backbone(model)
