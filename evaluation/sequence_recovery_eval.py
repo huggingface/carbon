@@ -136,8 +136,6 @@ def _load_model_and_tokenizer(model: str, revision: Optional[str], dtype: torch.
     tokenizer = AutoTokenizer.from_pretrained(
         model, revision=revision, trust_remote_code=True
     )
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
     model_obj = AutoModelForCausalLM.from_pretrained(
         model, revision=revision, trust_remote_code=True, dtype=dtype
     )
@@ -155,15 +153,7 @@ def process_data_shard(shard_id, sequences_data, args, dtype):
 
     tokenizer.padding_side = "left"
 
-    special_token_ids = list(getattr(tokenizer, "all_special_ids", []))
-    if not special_token_ids:
-        special_tokens = []
-        for token in tokenizer.special_tokens_map.values():
-            if isinstance(token, list):
-                special_tokens.extend(token)
-            else:
-                special_tokens.append(token)
-        special_token_ids = tokenizer.convert_tokens_to_ids(special_tokens)
+    special_token_ids = tokenizer.convert_tokens_to_ids(tokenizer.special_tokens)
     logits_processor = LogitsProcessorList(
         [SuppressSpecialTokensLogitsProcessor(special_token_ids)]
     )

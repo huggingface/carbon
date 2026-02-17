@@ -137,8 +137,6 @@ def _load_model_and_tokenizer(model: str, revision: str, dtype: torch.dtype):
     tokenizer = AutoTokenizer.from_pretrained(
         model, revision=revision, trust_remote_code=True
     )
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
     model_obj = AutoModelForCausalLM.from_pretrained(
         model, revision=revision, trust_remote_code=True, dtype=dtype
     )

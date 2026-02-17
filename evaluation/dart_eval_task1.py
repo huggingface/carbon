@@ -237,28 +237,15 @@ def score_causal(model, tokenizer, seqs_onehot, starts, ends, device):
     # between BOS and EOS (the standard approach for causal zero-shot scoring)
     clip_mask = torch.zeros_like(lls)
     if bos_id is not None:
-        bos_positions = torch.where(tokens == bos_id)
-        if bos_positions[0].numel() == 0:
-            tok_starts = torch.zeros(tokens.shape[0], dtype=torch.long, device=device)
-        else:
-            tok_starts = torch.zeros(tokens.shape[0], dtype=torch.long, device=device)
-            for idx, pos in zip(bos_positions[0], bos_positions[1]):
-                tok_starts[idx] = pos + 1
+        tok_starts = torch.where(tokens == bos_id)[1] + 1
     else:
         tok_starts = torch.zeros(tokens.shape[0], dtype=torch.long, device=device)
 
     if eos_id is not None:
         eos_positions = torch.where(tokens == eos_id)
-        if eos_positions[0].numel() == 0:
-            tok_ends = (
-                attention_mask.sum(dim=1)
-                if attention_mask is not None
-                else torch.full((tokens.shape[0],), tokens.shape[1], device=device)
-            )
-        else:
-            tok_ends = torch.zeros(tokens.shape[0], dtype=torch.long, device=device)
-            for idx, pos in zip(eos_positions[0], eos_positions[1]):
-                tok_ends[idx] = pos
+        tok_ends = torch.zeros(tokens.shape[0], dtype=torch.long, device=device)
+        for idx, pos in zip(eos_positions[0], eos_positions[1]):
+            tok_ends[idx] = pos
     else:
         tok_ends = (
             attention_mask.sum(dim=1)
@@ -447,8 +434,6 @@ def main():
         tokenizer = AutoTokenizer.from_pretrained(
             args.model, trust_remote_code=True, padding_side="right"
         )
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
         model = AutoModelForCausalLM.from_pretrained(
             args.model, trust_remote_code=True, torch_dtype=dtype
         ).to(device)

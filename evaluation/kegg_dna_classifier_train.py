@@ -150,7 +150,6 @@ def main() -> None:
         num_labels=len(label2id),
         id2label={v: k for k, v in label2id.items()},
         label2id=label2id,
-        ignore_mismatched_sizes=True,
     )
 
     freeze_backbone(model)
@@ -163,7 +162,7 @@ def main() -> None:
         weight_decay=args.weight_decay,
         num_train_epochs=args.max_epochs,
         max_steps=args.max_steps,
-        eval_strategy="epoch",
+        evaluation_strategy="epoch",
         save_strategy="epoch",
         logging_steps=10,
         bf16=args.bf16,
