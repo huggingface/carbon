@@ -14,11 +14,12 @@
 
 set -x
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_ROOT="${PROJECT_ROOT:-${SLURM_SUBMIT_DIR:-$(pwd)}}"
+SCRIPT_DIR="$PROJECT_ROOT/nanotron_training"
 NANOTRON_ROOT="${NANOTRON_ROOT:-$PROJECT_ROOT/../nanotron}"
 TRAINER_PYTHON_FILE="${TRAINER_PYTHON_FILE:-$NANOTRON_ROOT/run_train.py}"
 mkdir -p "$SCRIPT_DIR/slurm_logs"
+cd "$PROJECT_ROOT"
 
 nvidia-smi
 echo "/!\\ please verify that you use the right env"
@@ -68,7 +69,7 @@ echo "$HOSTNAMES"
 
 CMD=" \
     $TRAINER_PYTHON_FILE \
-    --config-file nanotron_training/3B_50B-generdata-hybrid-smollm.yaml
+    --config-file $PROJECT_ROOT/nanotron_training/3B_50B-generdata-hybrid-smollm.yaml
     "
 
 export LAUNCHER="torchrun \
