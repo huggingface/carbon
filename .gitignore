@@ -209,3 +209,4 @@ __marimo__/
 # Evaluation outputs
 eval_results/
 scratch/
+results/

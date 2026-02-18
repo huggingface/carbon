@@ -9,10 +9,10 @@ description = "Dependencies for Carbon evaluation scripts"
 requires-python = ">=3.12"
 readme = "README.md"
 dependencies = [
+  "vllm==0.15.1",
   "transformers",
   "datasets",
   "accelerate",
-  "vllm",
   "numpy",
   "pandas",
   "pyarrow",
@@ -22,6 +22,7 @@ dependencies = [
   "scikit-learn",
   "tqdm",
   "huggingface_hub",
+  "lighteval @ git+https://github.com/huggingface/lighteval.git@06aee5b2e9585beca4a8e16a550319b8e443a9c3"
 ]
 
 [project.optional-dependencies]
