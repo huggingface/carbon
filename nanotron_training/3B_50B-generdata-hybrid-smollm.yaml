@@ -1,0 +1,146 @@
+checkpoints:
+  checkpoint_interval: 2000
+  checkpoints_path: /scratch/loubna/checkpoints
+  checkpoints_path_is_shared_file_system: false
+  load_lr_scheduler: true
+  load_optimizer: true
+  resume_checkpoint_path: null
+  save_final_state: true
+  save_initial_state: false
+data_stages:
+- data:
+    dataset:
+      dataset_folder:
+      - /fsx/loubna/projects_v2/carbon/tokenized_data_hybrid/gener_raw_100k_fungi_smollm3h_8193/standard
+      - /fsx/loubna/projects_v2/carbon/tokenized_data_hybrid/gener_raw_100k_invertebrate_smollm3h_8193/standard
+      - /fsx/loubna/projects_v2/carbon/tokenized_data_hybrid/gener_raw_100k_plant_smollm3h_8193/standard
+      - /fsx/loubna/projects_v2/carbon/tokenized_data_hybrid/gener_raw_100k_protozoa_smollm3h_8193/standard
+      - /fsx/loubna/projects_v2/carbon/tokenized_data_hybrid/gener_raw_100k_vertebrate_mammalian_smollm3h_8193/standard
+      - /fsx/loubna/projects_v2/carbon/tokenized_data_hybrid/gener_raw_100k_vertebrate_other_smollm3_hybrid_8193/standard
+      dataset_weights:
+      - 0.029
+      - 0.197
+      - 0.080
+      - 0.005
+      - 0.268
+      - 0.421
+      pad_samples_to_global_batch_size: false
+      return_positions: true
+      token_size_in_bytes: 4
+      tokenizer_name: hf-carbon/smollm3-hybrid-dna-tokenizer-128
+      use_old_brrr_dataloader: false
+      vocab_size: 132481
+    num_loading_workers: 0
+    seed: 5
+  name: stable
+  start_training_step: 1
+general:
+  benchmark_csv_path: null
+  consumed_train_samples: null
+  ignore_sanity_checks: true
+  project: hf-carbon
+  run: 3B-50B-gener-hybrid-smollm3
+  seed: 5
+  step: null
+logging:
+  iteration_step_info_interval: 1
+  log_level: info
+  log_level_replica: info
+model:
+  ddp_bucket_cap_mb: 50
+  dtype: bfloat16
+  init_method:
+    std: 0.02
+  make_vocab_size_divisible_by: 1
+  model_config:
+    _attn_implementation: flash_attention_2
+    _fused_rms_norm: true
+    _fused_rotary_emb: true
+    _use_doc_masking: false
+    _use_qkv_packed: true
+    attention_bias: false
+    bos_token_id: null
+    eos_token_id: 128001
+    flex_attention_mask: null
+    hidden_act: silu
+    hidden_size: 2048
+    initializer_range: 0.02
+    intermediate_size: 11008
+    is_qwen2_config: true
+    max_position_embeddings: 8192
+    moe_config: null
+    num_attention_heads: 16
+    num_hidden_layers: 36
+    num_key_value_heads: 4
+    pad_token_id: null
+    pretraining_tp: 1
+    rms_norm_eps: 1.0e-06
+    rope_interleaved: false
+    rope_scaling: null
+    rope_theta: 50000.0
+    sliding_window_size: null
+    tie_word_embeddings: true
+    use_cache: true
+    vocab_size: 132481
+    no_rope_layer: null
+    # Hybrid BP loss: strict token_mask path
+    hybrid_bp_loss_enabled: true
+    hybrid_bp_loss_k: 6
+    # Derived from hf-carbon/smollm3-hybrid-dna-tokenizer-128 dna_config.json
+    hybrid_bp_dna_kmer_start_id: 128259
+    hybrid_bp_dna_kmer_end_id: 132481
+    hybrid_bp_weight_special_ce: 1.0
+optimizer:
+  accumulate_grad_in_fp32: true
+  clip_grad: 1.0
+  learning_rate_scheduler:
+    learning_rate: 0.0002
+    lr_decay_starting_step: 2000
+    lr_decay_steps: 22000
+    lr_decay_style: cosine
+    lr_warmup_steps: 2000
+    lr_warmup_style: linear
+    min_decay_lr: 2.0e-05
+  optimizer_factory:
+    adam_beta1: 0.9
+    adam_beta2: 0.95
+    adam_eps: 1.0e-08
+    name: adamW
+    torch_adam_is_fused: true
+  weight_decay: 0.1
+  weight_decay_exclude_named_params: null
+  zero_stage: 0
+parallelism:
+  context_parallel_size: 1
+  dp: 32
+  expert_parallel_size: 1
+  moe_layer_recompute: false
+  pp: 1
+  pp_engine: 1f1b
+  recompute_layer: false
+  tp: 1
+  tp_linear_async_communication: true
+  tp_mode: REDUCE_SCATTER
+  tp_recompute_allgather: true
+profiler: null
+s3_upload:
+  remove_after_upload: true
+  s5cmd_concurrency: 5
+  s5cmd_numworkers: 16
+  s5cmd_path: /fsx/loubna/.venv-2-6-cu124/bin/s5cmd
+  upload_s3_path: s3://hf-carbon/nanotron-ablations/hybrid-tokenizer/3B-50B-gener-hybrid-smollm3/
+tokenizer:
+  tokenizer_max_length: 8192
+  tokenizer_name_or_path: hf-carbon/smollm3-hybrid-dna-tokenizer-128
+  tokenizer_revision: null
+metrics_logging:
+  log_level: 1
+  log_detail_interval: 100
+tokens:
+  batch_accumulation_per_replica: 16
+  limit_test_batches: 0
+  limit_val_batches: 0
+  micro_batch_size: 1
+  sequence_length: 8192
+  train_steps: 24000
+  val_check_interval: 100
