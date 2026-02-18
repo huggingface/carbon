@@ -5,15 +5,21 @@
 #SBATCH --exclusive
 #SBATCH --gres=gpu:8
 #SBATCH --partition=hopper-prod
-#SBATCH --output=/fsx/loubna/projects_v2/smollm3/nanotron/ablations/logs/carbon/3B_ablations/hybrid_tokenizer/3B-50B-generdata-hybrid-smollm3-%j.out
+#SBATCH --output=nanotron_training/slurm_logs/3B-50B-generdata-hybrid-smollm3-%j.out
+#SBATCH --error=nanotron_training/slurm_logs/3B-50B-generdata-hybrid-smollm3-%j.err
 #SBATCH --qos=high
 #SBATCH --begin=now+0minutes
 #SBATCH --time=5-00:00:00
 #SBATCH --mail-type=ALL
-#SBATCH --mail-user=loubna@huggingface.co
 
 set -x
-TRAINER_PYTHON_FILE=/fsx/loubna/projects_v2/smollm3/nanotron/run_train.py
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+NANOTRON_ROOT="${NANOTRON_ROOT:-$PROJECT_ROOT/../nanotron}"
+TRAINER_PYTHON_FILE="${TRAINER_PYTHON_FILE:-$NANOTRON_ROOT/run_train.py}"
+mkdir -p "$SCRIPT_DIR/slurm_logs"
+
 nvidia-smi
 echo "/!\\ please verify that you use the right env"
 which python3
@@ -39,7 +45,6 @@ export HYBRID_BP_DNA_KMER_START_ID=${HYBRID_BP_DNA_KMER_START_ID:-128259}
 export HYBRID_BP_DNA_KMER_END_ID=${HYBRID_BP_DNA_KMER_END_ID:-132481}
 export HYBRID_BP_K=${HYBRID_BP_K:-6}
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -n "${HYBRID_BP_TOKENIZER_PATH:-}" ]]; then
     python "$SCRIPT_DIR/../verify_token_mask_sample.py" \
         --tokenizer_path "${HYBRID_BP_TOKENIZER_PATH}" \
@@ -47,7 +52,9 @@ if [[ -n "${HYBRID_BP_TOKENIZER_PATH:-}" ]]; then
 fi
 
 module load cuda/12.4
-source /fsx/loubna/.venv-2-6-cu124/bin/activate
+if [[ -n "${VENV_ACTIVATE:-}" ]]; then
+    source "${VENV_ACTIVATE}"
+fi
 echo "PATH: $PATH"
 echo "Environment variables:"
 printenv | sort
