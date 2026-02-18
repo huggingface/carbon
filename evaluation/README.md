@@ -28,7 +28,10 @@ uv run accelerate launch --config_file ddp.yaml -m lighteval accelerate \
   "model_name=HuggingFaceTB/SmolLM3-3B-Base,dtype=bfloat16,batch_size=8" \
   "mmlu_pro_cf|0" \
   --custom-tasks mmlu_pro.py \
-  --output-dir .
+  --output-dir . \
+  --save-details \
+  --push-to-hub \
+  --results-org hf-carbon
 ```
 
 Biology-only subset:
@@ -38,7 +41,10 @@ uv run accelerate launch --config_file ddp.yaml -m lighteval accelerate \
   "model_name=HuggingFaceTB/SmolLM3-3B-Base,dtype=bfloat16,batch_size=8" \
   "mmlu_pro_biology_cf|0" \
   --custom-tasks mmlu_pro_biology.py \
-  --output-dir .
+  --output-dir . \
+  --save-details \
+  --push-to-hub \
+  --results-org hf-carbon
 ```
 
 Basic DNA subset:
@@ -48,7 +54,10 @@ uv run accelerate launch --config_file ddp.yaml -m lighteval accelerate \
   "model_name=HuggingFaceTB/SmolLM3-3B-Base,dtype=bfloat16,batch_size=8" \
   "basic_dna_cf|0" \
   --custom-tasks basic_dna.py \
-  --output-dir .
+  --output-dir . \
+  --save-details \
+  --push-to-hub \
+  --results-org hf-carbon
 ```
 
 ## Smol check (minimal end-to-end examples)

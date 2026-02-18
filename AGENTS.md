@@ -1,7 +1,3 @@
-## Plans
-
-* Store plans in the `scratch/plans` folder with an instructive name.
-
 ## Formatting
 
 * When writing code snippets in Markdown, use ```sh code snippet ``` instead of ```bash code snippet ```
