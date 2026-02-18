@@ -90,6 +90,12 @@ model:
     hybrid_bp_dna_kmer_start_id: 128259
     hybrid_bp_dna_kmer_end_id: 132481
     hybrid_bp_weight_special_ce: 1.0
+    # BP loss is typically ~1.4 vs CE ~8-10, so down-weight NL CE to keep comparable scale.
+    hybrid_bp_bp_weight: 1.0
+    hybrid_bp_nl_weight: 0.15
+    # Pretraining default: ignore DNA special-token CE; always ignore <oov>.
+    hybrid_bp_include_dna_special_ce: false
+    hybrid_bp_dna_oov_id: 128258
 optimizer:
   accumulate_grad_in_fp32: true
   clip_grad: 1.0
