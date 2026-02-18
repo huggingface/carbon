@@ -20,34 +20,35 @@ Some evals support `--use_evo2` and require Evo2 plus YAML support:
 uv sync --extra evo2
 ```
 
-## Lighteval MMLU (logit-based)
-MMLU tasks in lighteval use log-likelihood metrics (logit-based scoring). Task specs follow the `task|few_shot` format (or just `task` to default to 0).
-
-```sh
-uv run accelerate launch --config_file ddp.yaml -m lighteval accelerate \
-  "model_name=HuggingFaceTB/SmolLM3-3B-Base,dtype=bfloat16" \
-  "mmlu|0" \
-  --output-dir ./results/lighteval/smollm3-3b-base
-```
-
-For SmolLM3 model-card comparable MMLU numbers, use the SmolLM3 custom task file and the CF formulation:
+## LightEval
+For pretrained models we use log-likelihood metrics (logit-based scoring). Task specs follow the `task|few_shot` format (or just `task` to default to 0). The following example is a sanity check against `SmolLM3-3B-Base` (should yield 19.7%):
 
 ```sh
 uv run accelerate launch --config_file ddp.yaml -m lighteval accelerate \
   "model_name=HuggingFaceTB/SmolLM3-3B-Base,dtype=bfloat16,batch_size=8" \
-  "mmlu_cf|0" \
-  --custom-tasks smollm3_mmlu_tasks.py \
-  --output-dir ./results/lighteval/smollm3-3b-base
+  "mmlu_pro_cf|0" \
+  --custom-tasks mmlu_pro.py \
+  --output-dir .
 ```
 
-## MMLU-Pro (logit-based)
-This script scores choices by comparing log-probabilities of the answer letters.
+Biology-only subset:
 
 ```sh
-uv run python mmlu_pro.py \
-  --model HuggingFaceTB/SmolLM3-3B-Base \
-  --max_samples 200 \
-  --dtype float16
+uv run accelerate launch --config_file ddp.yaml -m lighteval accelerate \
+  "model_name=HuggingFaceTB/SmolLM3-3B-Base,dtype=bfloat16,batch_size=8" \
+  "mmlu_pro_biology_cf|0" \
+  --custom-tasks mmlu_pro_biology.py \
+  --output-dir .
+```
+
+Basic DNA subset:
+
+```sh
+uv run accelerate launch --config_file ddp.yaml -m lighteval accelerate \
+  "model_name=HuggingFaceTB/SmolLM3-3B-Base,dtype=bfloat16,batch_size=8" \
+  "basic_dna_cf|0" \
+  --custom-tasks basic_dna.py \
+  --output-dir .
 ```
 
 ## Smol check (minimal end-to-end examples)
