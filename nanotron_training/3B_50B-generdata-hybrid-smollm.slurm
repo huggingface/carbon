@@ -40,6 +40,11 @@ export WANDB_ENTITY="huggingface"
 export FORCE_UPDATE_CACHE_S3=1
 export TMPDIR=/scratch
 export CUDA_DEVICE_MAX_CONNECTIONS="1"
+export PYTHONFAULTHANDLER=1
+export TORCH_DISTRIBUTED_DEBUG=DETAIL
+export NCCL_DEBUG=INFO
+export NCCL_ASYNC_ERROR_HANDLING=1
+export TORCH_NCCL_BLOCKING_WAIT=1
 
 # Hybrid BP settings (must match config + tokenizer dna_config.json)
 export ENABLE_HYBRID_BP=1
