@@ -4,6 +4,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --exclusive
 #SBATCH --gres=gpu:8
+#SBATCH --gpus-per-task=8
 #SBATCH --partition=hopper-prod
 #SBATCH --output=nanotron_training/slurm_logs/3B-50B-generdata-hybrid-smollm3-%j.out
 #SBATCH --error=nanotron_training/slurm_logs/3B-50B-generdata-hybrid-smollm3-%j.err
@@ -63,6 +64,7 @@ echo "Python path: $(which python)"
 echo "Torchrun path: $(which torchrun)"
 python -m pip freeze
 nvcc --version
+echo "CUDA_VISIBLE_DEVICES before launch: ${CUDA_VISIBLE_DEVICES:-<unset>}"
 
 echo go "$COUNT_NODE"
 echo "$HOSTNAMES"
@@ -89,6 +91,6 @@ sleep_time=$(bc <<< "scale=3; $random_milliseconds / 1000")
 echo "Sleeping for $sleep_time seconds..."
 sleep "$sleep_time"
 
-srun $SRUN_ARGS -u bash -c "$LAUNCHER --node_rank $SLURM_PROCID --role $SLURMD_NODENAME: $CMD"
+srun $SRUN_ARGS --gpus-per-task=8 --gpu-bind=none -u bash -c "$LAUNCHER --node_rank $SLURM_PROCID --role $SLURMD_NODENAME: $CMD"
 
 echo "END TIME: $(date)"
