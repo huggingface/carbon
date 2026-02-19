@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "carbon-evals"
+version = "0.0.0"
+description = "Dependencies for Carbon evaluation scripts"
+requires-python = ">=3.12"
+readme = "README.md"
+dependencies = [
+  "vllm<0.10.2", # Version pinned due to lighteval
+  "transformers",
+  "datasets",
+  "accelerate",
+  "numpy",
+  "pandas",
+  "pyarrow",
+  "polars",
+  "pyfaidx",
+  "scipy",
+  "scikit-learn",
+  "tqdm",
+  "huggingface_hub",
+  "lighteval @ git+https://github.com/huggingface/lighteval.git@06aee5b2e9585beca4a8e16a550319b8e443a9c3",
+  "more-itertools" # Needed for lighteval
+]
+
+[project.optional-dependencies]
+evo2 = [
+  "evo2",
+  "pyyaml",
+]
+
+[tool.setuptools]
+packages = []

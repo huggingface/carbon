@@ -160,3 +160,7 @@ python evaluation/kegg_dna_classifier_train.py \
   --push_to_hub \
   --hub_repo_id hf-carbon/kegg-dna-classifier-results
 ```
+
+### LightEval tasks
+
+To run LightEval tasks like MMLU and friends, see the instructions in the `[evaluation](./evaluation/) folder.
