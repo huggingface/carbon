@@ -129,4 +129,35 @@ MMLU_PRO_BIOLOGY_TASKS = [
     for formulation in MMLU_PRO_FORMULATIONS
 ]
 
-TASKS_TABLE = HELLASWAG_TASKS + MMLU_TASKS + MMLU_PRO_TASKS + MMLU_PRO_BIOLOGY_TASKS
+BASIC_DNA_METRICS = [
+    LogLikelihoodAccMetric(normalization=LogProbCharNorm()),
+]
+BASIC_DNA_FORMULATION = CFFormulation()
+
+BASIC_DNA_TASKS = [
+    LightevalTaskConfig(
+        name="basic_dna_cf",
+        prompt_function=get_mcq_prompt_function(
+            Language.ENGLISH,
+            lambda line: {
+                "question": line["question"],
+                "choices": line["options"],
+                "gold_idx": line["answer_index"],
+            },
+            formulation=BASIC_DNA_FORMULATION,
+        ),
+        hf_repo="hf-carbon/basic-dna",
+        hf_subset="default",
+        evaluation_splits=("train",),
+        few_shots_split="train",
+        metrics=get_metrics_for_formulation(BASIC_DNA_FORMULATION, BASIC_DNA_METRICS),
+    )
+]
+
+TASKS_TABLE = (
+    HELLASWAG_TASKS
+    + MMLU_TASKS
+    + MMLU_PRO_TASKS
+    + MMLU_PRO_BIOLOGY_TASKS
+    + BASIC_DNA_TASKS
+)

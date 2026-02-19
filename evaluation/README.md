@@ -21,13 +21,13 @@ uv sync --extra evo2
 ```
 
 ## LightEval
-For pretrained models we use log-likelihood metrics (logit-based scoring). Task specs follow the `task|few_shot` format (or just `task` to default to 0). The following example is a sanity check against `SmolLM3-3B-Base` (should yield 19.7%):
+For pretrained models we use log-likelihood metrics (logit-based scoring). Task specs follow the `task|few_shot` format (or just `task` to default to 0). Run these commands from the root of the repo:
 
 ```sh
 uv run lighteval vllm \
   "model_name=HuggingFaceTB/SmolLM3-3B-Base,dtype=bfloat16,override_chat_template=false,tensor_parallel_size=2" \
   "mmlu_pro_cf|0" \
-  --custom-tasks lighteval_tasks.py \
+  --custom-tasks evaluation/lighteval_tasks.py \
   --output-dir . \
   --save-details \
   --push-to-hub \
@@ -40,20 +40,7 @@ Biology-only subset:
 uv run lighteval vllm \
   "model_name=HuggingFaceTB/SmolLM3-3B-Base,dtype=bfloat16,override_chat_template=false,tensor_parallel_size=2" \
   "mmlu_pro_biology_cf|0" \
-  --custom-tasks lighteval_tasks.py \
-  --output-dir . \
-  --save-details \
-  --push-to-hub \
-  --results-org hf-carbon
-```
-
-All tasks in `lighteval_tasks.txt`:
-
-```sh
-uv run lighteval vllm \
-  "model_name=HuggingFaceTB/SmolLM3-3B-Base,dtype=bfloat16,override_chat_template=false,tensor_parallel_size=2" \
-  "lighteval_tasks.txt" \
-  --custom-tasks lighteval_tasks.py \
+  --custom-tasks evaluation/lighteval_tasks.py \
   --output-dir . \
   --save-details \
   --push-to-hub \
@@ -66,7 +53,20 @@ Basic DNA subset:
 uv run lighteval vllm \
   "model_name=HuggingFaceTB/SmolLM3-3B-Base,dtype=bfloat16,override_chat_template=false,tensor_parallel_size=2" \
   "basic_dna_cf|0" \
-  --custom-tasks basic_dna.py \
+  --custom-tasks evaluation/lighteval_tasks.py \
+  --output-dir . \
+  --save-details \
+  --push-to-hub \
+  --results-org hf-carbon
+```
+
+All tasks in `lighteval_tasks.txt`:
+
+```sh
+uv run lighteval vllm \
+  "model_name=HuggingFaceTB/SmolLM3-3B-Base,dtype=bfloat16,override_chat_template=false,tensor_parallel_size=2" \
+  "lighteval_tasks.txt" \
+  --custom-tasks evaluation/lighteval_tasks.py \
   --output-dir . \
   --save-details \
   --push-to-hub \

@@ -1,57 +1,166 @@
----
-pretty_name: MMLU-Pro Biology
-language:
-- en
-license: other
-size_categories:
-- 1K<n<10K
-source_datasets:
-- TIGER-Lab/MMLU-Pro
----
+# Carbon
 
-# MMLU-Pro Biology
+A project to build an English and DNA LLM + a plasmid generation model as an application. Current training proposal: [here](https://docs.google.com/document/d/1YdHmR8-MdgGOBApA76KvgcZyKbnngmRnXhzwT_UntjM/edit?usp=sharing)
 
-This dataset is a filtered subset of `TIGER-Lab/MMLU-Pro` containing only rows where `category == "biology"`.
+## Datasets
 
-## Source
+### DNA Datasets
+- [OpenGenome2](https://huggingface.co/datasets/arcinstitute/opengenome2): used to train the [Evo2](https://huggingface.co/collections/arcinstitute/evo) family of 1B, 7B, and 40B biological foundation models. [Paper](https://www.biorxiv.org/content/10.1101/2025.02.18.638918v1), [GitHub](https://github.com/ArcInstitute/evo2).
 
-- Original dataset: `TIGER-Lab/MMLU-Pro`
-- Filter applied: `category == "biology"`
+### Natural Plasmids
+Natural plasmids found in bacteria, not synthetically engineered.
+- **PLSDB:** 66k bacterial plasmid sequences collected from GenBank and RefSeq isolate genomes. Includes metadata on host taxonomy, geographical location, antibiotic resistance genes, virulence factors, and MOB/replicon typing.
+- **IMG/PR:** An environmental database containing 693k plasmid sequences automatically identified from isolate genomes, metagenomes, and metatranscriptomes. Data analysis notebook available at [`data/imgpr_data_analysis.ipynb`](data/imgpr_data_analysis.ipynb).
+- **PIPdb:** A pathogen-focused database with 761k plasmid sequences from pathogenic bacteria, including annotations for virulence factors and antimicrobial resistance genes, as well as a risk-scoring system.
+- **PlasmidScope**: Includes both PLSDB and IMG/PR plus additional plasmids from GenBank, RefSeq, COMPASS.. with standardized annotations and quality filtering + deduplication. Total of 852k plasmids. (The sequences are being added to the hub)
 
-Please refer to the original dataset card for full license and citation details. This subset is provided for convenience and inherits the original dataset's terms.
+Datasets are available on the hub: [hf-carbon/natural-plasmids](https://huggingface.co/datasets/hf-carbon/natural-plasmids) (and [HuggingFaceTB/carbon-raw-data](https://huggingface.co/datasets/HuggingFaceTB/carbon-raw-data) for the viewer)
 
-## Data fields
+### Synthetic Plasmids from Labs
+- 160k Plasmids from Addgene at [hf-carbon/addgene](https://huggingface.co/datasets/hf-carbon/AddGene)
 
-Each split contains the following columns (inherited from the original dataset):
+## Model Training
 
-- `question_id`
-- `question`
-- `options`
-- `answer`
-- `answer_index`
-- `cot_content`
-- `category`
-- `src`
+- TRL training under [`trl_training`](trl_training/), use nanotron instead which is faster. 
+- nanotron training under [`nanotron_training`](nanotron_training/) with code for tokenization using `datatrove`
 
-## Splits
+For large scale pretraining we use [nanotron](https://github.com/huggingface/nanotron/tree/main) library.
 
-The dataset includes the same split names as the source dataset, filtered by category:
+## Evaluation
 
-- `test`
-- `validation`
+### Sequence Recovery 
+We provide a standalone eval script that runs Sequence Recovery after training against a **Hub model + revision** and saves results to Parquet (plus a JSON summary). Sequence Recovery is a **training-free generative eval**: given a fixed-length DNA context, the model generates the next segment and we score **exact-base recovery accuracy** (overall + type-wise).
+`--data_type` selects the dataset split: `eukaryote`, `bacteria`, or `others`.
 
-Note: The expected random-guess accuracy on the `test` split (accounting for varying numbers of options per question) is about 11.08% (`0.110794`).
+CLI:
+```
+python evaluation/sequence_recovery_eval.py \
+  --model /path/to/carbon/model-or-hub-repo \
+  --revision checkpoint-10000 \
+  --data_type eukaryote \
+  --output_dir ./eval_results/sequence_recovery \
+  --bf16
+```
+For official Evo2 weights, add `--use_evo2` (and optionally `--gen_len_bp 30`).
 
-## Usage
-
-```py
-from datasets import load_dataset
-
-ds = load_dataset("hf-carbon/mmlu-pro-biology")
-print(ds)
-print(ds["test"][0])
+SLURM:
+```
+sbatch --export=MODEL=/path/to/carbon/model-or-hub-repo,REVISION=checkpoint-10000,DATA_TYPE=eukaryote evaluation/sequence_recovery_eval.slurm
 ```
 
-## Creation script
+Optional upload:
+```
+python evaluation/sequence_recovery_eval.py \
+  --model /path/to/carbon/model-or-hub-repo \
+  --revision checkpoint-10000 \
+  --data_type eukaryote \
+  --output_dir ./eval_results/sequence_recovery \
+  --bf16 \
+  --push_to_hub \
+  --hub_repo_id hf-carbon/seq-recovery-results
+```
 
-See `create_dataset.py` for the exact filtering and push logic.
+### ClinVar VEP (post-training)
+ClinVar VEP evaluates variant effect prediction by scoring **ref vs alt alleles** in long genomic context and reporting **AUROC/AUPRC**.
+
+CLI:
+```
+python evaluation/clinvar_vep_eval.py \
+  --model /path/to/carbon/model-or-hub-repo \
+  --revision checkpoint-10000 \
+  --context_length 96000 \
+  --output_dir ./eval_results/clinvar_vep \
+  --bf16
+```
+For official Evo2 weights, add `--use_evo2`.
+
+SLURM:
+```
+sbatch --export=MODEL=/path/to/carbon/model-or-hub-repo,REVISION=checkpoint-10000,CONTEXT_LEN=96000 evaluation/clinvar_vep_eval.slurm
+```
+
+### CDS half-shuffle discrimination (post-training)
+This task evaluates whether a model assigns higher likelihood to **real CDS sequences** vs **half-shuffled negatives** (first half fixed, second half shuffled). The dataset lives at `hf-carbon/carbon_tasks` and uses fixed column names (`original_sequence`, `input`).
+For the current dataset, `original_sequence` is the real CDS and `input` is the half-shuffled control.
+
+CLI:
+```
+python evaluation/cds_half_shuffle_eval.py \
+  --model /path/to/carbon/model-or-hub-repo \
+  --revision checkpoint-10000 \
+  --dataset hf-carbon/carbon_tasks \
+  --split train \
+  --output_dir ./eval_results/cds_half_shuffle \
+  --bf16
+```
+Dataset columns example:
+```
+record_id, taxonomy, gene_type, species_type, original_sequence, length, label, input, __index_level_0__
+```
+In this dataset, `original_sequence` is the real CDS and `input` is the half-shuffled control.
+The dataset currently provides a single `train` split with ~30K rows (config: `default`).
+For official Evo2 weights, add `--use_evo2` and pass the Evo2 model name (e.g., `evo2_1b_base`).
+
+SLURM:
+```
+sbatch --export=MODEL=/path/to/carbon/model-or-hub-repo,REVISION=checkpoint-10000 evaluation/cds_half_shuffle_eval.slurm
+```
+
+### DART-Eval Task 1: Prioritizing Known Regulatory Elements (post-training)
+Zero-shot likelihood evaluation from [DART-Eval](https://github.com/kundajelab/DART-Eval). Compares model log-likelihoods on real ENCODE cCRE elements vs dinucleotide-shuffled controls, reporting accuracy and Wilcoxon signed-rank test. Data is auto-downloaded from [hf-carbon/dart-eval-task1](https://huggingface.co/datasets/hf-carbon/dart-eval-task1) (private).
+
+Extra dependencies: `pip install pyfaidx polars`
+
+CLI:
+```
+python evaluation/dart_eval_task1.py \
+  --model GenerTeam/GENERator-v2-eukaryote-1.2b-base \
+  --dart_work_dir /path/to/dart_work \
+  --batch_size 512 \
+  --bf16
+```
+
+SLURM:
+```
+sbatch --export=MODEL=GenerTeam/GENERator-v2-eukaryote-1.2b-base evaluation/dart_task1_zero_shot.slurm
+```
+
+### KEGG DNA-only classifier (post-training)
+This matches the BioReason **DNA-only Evo2** setup: we train a lightweight classifier head on `wanglab/kegg` **with the backbone frozen** and evaluate accuracy/F1 on **val and test splits**.
+
+CLI:
+```
+python evaluation/kegg_dna_classifier_train.py \
+  --model /path/to/carbon/model-or-hub-repo \
+  --revision checkpoint-10000 \
+  --max_epochs 5 \
+  --batch_size 1 \
+  --max_length 2048 \
+  --truncate_dna_per_side 1024 \
+  --merge_val_test_set \
+  --bf16
+```
+
+SLURM:
+```
+sbatch --export=MODEL=/path/to/carbon/model-or-hub-repo,REVISION=checkpoint-10000 kegg_dna_classifier_train.slurm
+```
+
+Optional upload:
+```
+python evaluation/kegg_dna_classifier_train.py \
+  --model /path/to/carbon/model-or-hub-repo \
+  --revision checkpoint-10000 \
+  --max_epochs 5 \
+  --batch_size 1 \
+  --max_length 2048 \
+  --truncate_dna_per_side 1024 \
+  --merge_val_test_set \
+  --bf16 \
+  --push_to_hub \
+  --hub_repo_id hf-carbon/kegg-dna-classifier-results
+```
+
+### LightEval tasks
+
+To run LightEval tasks like MMLU and friends, see the instructions in the `[evaluation](./evaluation/) folder.
