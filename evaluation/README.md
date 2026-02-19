@@ -34,6 +34,17 @@ uv run lighteval vllm \
   --results-org hf-carbon
 ```
 
+Or submit via Slurm (supports `--tp` and `--dp`):
+
+```sh
+sbatch evaluation/launch_lighteval.slurm \
+  --model HuggingFaceTB/SmolLM3-3B-Base \
+  --revision main \
+  --tp 2 \
+  --dp 1 \
+  --task "mmlu_pro_cf|0"
+```
+
 Biology-only subset:
 
 ```sh
