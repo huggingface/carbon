@@ -24,10 +24,10 @@ uv sync --extra evo2
 For pretrained models we use log-likelihood metrics (logit-based scoring). Task specs follow the `task|few_shot` format (or just `task` to default to 0). The following example is a sanity check against `SmolLM3-3B-Base` (should yield 19.7%):
 
 ```sh
-uv run accelerate launch --config_file ddp.yaml -m lighteval accelerate \
-  "model_name=HuggingFaceTB/SmolLM3-3B-Base,dtype=bfloat16,batch_size=8" \
+uv run lighteval vllm \
+  "model_name=HuggingFaceTB/SmolLM3-3B-Base,dtype=bfloat16,override_chat_template=false,tensor_parallel_size=2" \
   "mmlu_pro_cf|0" \
-  --custom-tasks mmlu_pro.py \
+  --custom-tasks lighteval_tasks.py \
   --output-dir . \
   --save-details \
   --push-to-hub \
@@ -37,10 +37,23 @@ uv run accelerate launch --config_file ddp.yaml -m lighteval accelerate \
 Biology-only subset:
 
 ```sh
-uv run accelerate launch --config_file ddp.yaml -m lighteval accelerate \
-  "model_name=HuggingFaceTB/SmolLM3-3B-Base,dtype=bfloat16,batch_size=8" \
+uv run lighteval vllm \
+  "model_name=HuggingFaceTB/SmolLM3-3B-Base,dtype=bfloat16,override_chat_template=false,tensor_parallel_size=2" \
   "mmlu_pro_biology_cf|0" \
-  --custom-tasks mmlu_pro_biology.py \
+  --custom-tasks lighteval_tasks.py \
+  --output-dir . \
+  --save-details \
+  --push-to-hub \
+  --results-org hf-carbon
+```
+
+All tasks in `lighteval_tasks.txt`:
+
+```sh
+uv run lighteval vllm \
+  "model_name=HuggingFaceTB/SmolLM3-3B-Base,dtype=bfloat16,override_chat_template=false,tensor_parallel_size=2" \
+  "lighteval_tasks.txt" \
+  --custom-tasks lighteval_tasks.py \
   --output-dir . \
   --save-details \
   --push-to-hub \
@@ -50,8 +63,8 @@ uv run accelerate launch --config_file ddp.yaml -m lighteval accelerate \
 Basic DNA subset:
 
 ```sh
-uv run accelerate launch --config_file ddp.yaml -m lighteval accelerate \
-  "model_name=HuggingFaceTB/SmolLM3-3B-Base,dtype=bfloat16,batch_size=8" \
+uv run lighteval vllm \
+  "model_name=HuggingFaceTB/SmolLM3-3B-Base,dtype=bfloat16,override_chat_template=false,tensor_parallel_size=2" \
   "basic_dna_cf|0" \
   --custom-tasks basic_dna.py \
   --output-dir . \

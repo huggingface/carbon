@@ -4,7 +4,7 @@
 
 ## Development / debugging
 
-* Use the `scratch` folder at the root of the repo to store local test scripts or files.
+* Use the `scratch` folder at the root of the repo to store local test scripts, data, or files.
 * Never commit data files to Git
 
 ## Evaluation

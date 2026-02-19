@@ -1,0 +1,7 @@
+custom|hellaswag_cf|0|1
+custom|arc_cf|0|1
+custom|mmlu_cf|0|1
+custom|mmlu_pro_cf|0|1
+custom|winogrande_cf|0|1
+custom|openbookqa_cf|0|1
+custom|piqa_cf|0|1
