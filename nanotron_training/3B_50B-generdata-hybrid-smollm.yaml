@@ -53,11 +53,11 @@ model:
     std: 0.02
   make_vocab_size_divisible_by: 1
   model_config:
-    _attn_implementation: flash_attention_2
-    _fused_rms_norm: true
-    _fused_rotary_emb: true
+    _attn_implementation: sdpa
+    _fused_rms_norm: false
+    _fused_rotary_emb: false
     _use_doc_masking: false
-    _use_qkv_packed: true
+    _use_qkv_packed: false
     attention_bias: false
     bos_token_id: null
     eos_token_id: 128001
