@@ -19,7 +19,7 @@ Usage:
 
 Examples:
   sbatch evaluation/launch_lighteval.slurm --model HuggingFaceTB/SmolLM3-3B-Base --revision main --tp 2 --dp 1
-  sbatch evaluation/launch_lighteval.slurm --model HuggingFaceTB/SmolLM3-3B-Base --task mmlu_pro_biology_cf|0 --tp 2 --dp 1
+  sbatch evaluation/launch_lighteval.slurm --model HuggingFaceTB/SmolLM3-3B-Base --task "mmlu_pro_biology_cf|0" --tp 2 --dp 1
 USAGE
 }
 
@@ -85,12 +85,20 @@ if [[ -z "$MODEL" ]]; then
   exit 1
 fi
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 VENV_PATH="${REPO_ROOT}/evaluation/.venv"
 
 if [[ ! -d "$VENV_PATH" ]]; then
   echo "Expected virtual env at ${VENV_PATH}. Create it before running this job." >&2
   exit 1
+fi
+
+if command -v module >/dev/null 2>&1; then
+  module load cuda/12.9
+fi
+
+if [[ -f "$HOME/.bashrc" ]]; then
+  source "$HOME/.bashrc"
 fi
 
 source "${VENV_PATH}/bin/activate"
