@@ -1,0 +1,10 @@
+custom|mmlu_mcf:college_biology|0|1
+custom|mmlu_mcf:high_school_biology|0|1
+custom|mmlu_mcf:medical_genetics|0|1
+custom|mmlu_pro_biology_mcf|0|1
+custom|gpqa_biology_mcq_mcf|0|1
+custom|basic_dna_mcf|0|1
+custom|scieval_mcq_mcf|0|1
+custom|scieval_mcq_genetics_mcf|0|1
+custom|sciknoweval_mcq_mcf|0|1
+custom|lab_bench_seqqa_mcf|0|1

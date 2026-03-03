@@ -9,11 +9,11 @@ from lighteval.tasks.templates.multichoice import get_mcq_prompt_function
 from lighteval.tasks.templates.utils.formulation import CFFormulation, HybridFormulation, MCFFormulation
 from lighteval.utils.language import Language
 
-QA_METRICS = [
+qa_metrics = [
     LogLikelihoodAccMetric(normalization=LogProbTokenNorm()),
     LogLikelihoodAccMetric(normalization=LogProbCharNorm()),
 ]
-ALL_QA_FORMULATIONS = [MCFFormulation(), CFFormulation(), HybridFormulation()]
+all_qa_formulations = [MCFFormulation(), CFFormulation()]
 
 # fmt: off
 MMLU_SUBSETS = [
@@ -52,9 +52,9 @@ HELLASWAG_TASKS = [
         hf_subset="default",
         hf_avail_splits=("train", "validation"),
         evaluation_splits=("validation",),
-        metrics=get_metrics_for_formulation(formulation, QA_METRICS),
+        metrics=get_metrics_for_formulation(formulation, qa_metrics),
     )
-    for formulation in ALL_QA_FORMULATIONS
+    for formulation in all_qa_formulations
 ]
 
 MMLU_TASKS = [
@@ -75,16 +75,11 @@ MMLU_TASKS = [
         hf_avail_splits=("auxiliary_train", "dev", "validation", "test"),
         evaluation_splits=("test",),
         few_shots_split="dev",
-        metrics=get_metrics_for_formulation(formulation, QA_METRICS),
+        metrics=get_metrics_for_formulation(formulation, qa_metrics),
     )
     for subset in MMLU_SUBSETS
-    for formulation in ALL_QA_FORMULATIONS
+    for formulation in all_qa_formulations
 ]
-
-MMLU_PRO_METRICS = [
-    LogLikelihoodAccMetric(normalization=LogProbCharNorm()),
-]
-MMLU_PRO_FORMULATIONS = [CFFormulation(), MCFFormulation()]
 
 MMLU_PRO_TASKS = [
     LightevalTaskConfig(
@@ -103,9 +98,9 @@ MMLU_PRO_TASKS = [
         hf_revision="3373e0b32277875b8db2aa555a333b78a08477ea",
         evaluation_splits=("test",),
         few_shots_split="validation",
-        metrics=get_metrics_for_formulation(formulation, MMLU_PRO_METRICS),
+        metrics=get_metrics_for_formulation(formulation, qa_metrics),
     )
-    for formulation in MMLU_PRO_FORMULATIONS
+    for formulation in all_qa_formulations
 ]
 
 MMLU_PRO_BIOLOGY_TASKS = [
@@ -124,19 +119,55 @@ MMLU_PRO_BIOLOGY_TASKS = [
         hf_subset="default",
         evaluation_splits=("test",),
         few_shots_split="validation",
-        metrics=get_metrics_for_formulation(formulation, MMLU_PRO_METRICS),
+        metrics=get_metrics_for_formulation(formulation, qa_metrics),
     )
-    for formulation in MMLU_PRO_FORMULATIONS
+    for formulation in all_qa_formulations
 ]
 
-BASIC_DNA_METRICS = [
-    LogLikelihoodAccMetric(normalization=LogProbCharNorm()),
+LAB_BENCH_SEQQA_SUBTASKS = [
+    "ORF-seq-AAid-v1-public",
+    "ORF-seq-AAseq-v1-public",
+    "ORF-seq-numlen-v1-public",
+    "ORF-transeff-v1-public",
+    "PCR-gene-enzprimers-v1-public",
+    "PCR-gene-gibshindprimers-v1-public",
+    "PCR-gene-gibssmaprimers-v1-public",
+    "PCR-geneprimers-enz-v1-public",
+    "PCR-len-primers-v1-public",
+    "PCR-primers-len-v1-public",
+    "PCR-seq-enzprimers-v1-public",
+    "PCR-seq-primers-v1-public",
+    "Prop-seq-gcpercent-v1-public",
+    "RE-seq-lenfrags-v1-public",
+    "RE-seq-numfrags-v1-public",
 ]
-BASIC_DNA_FORMULATION = CFFormulation()
+
+LAB_BENCH_SEQQA_TASKS = [
+    LightevalTaskConfig(
+        name=f"lab_bench_seqqa_{formulation.name.lower()}:{subtask}",
+        prompt_function=get_mcq_prompt_function(
+            Language.ENGLISH,
+            lambda line: {
+                "question": line["question"],
+                "choices": line["options"],
+                "gold_idx": int(line["answer_index"]),
+            },
+            formulation=formulation,
+        ),
+        hf_repo="hf-carbon/lab-bench",
+        hf_subset="SeqQA",
+        hf_filter=(None if subtask == "all" else lambda line, subtask=subtask: line["subtask"] == subtask),
+        hf_avail_splits=("train",),
+        evaluation_splits=("train",),
+        metrics=get_metrics_for_formulation(formulation, qa_metrics),
+    )
+    for subtask in ["all"] + LAB_BENCH_SEQQA_SUBTASKS
+    for formulation in all_qa_formulations
+]
 
 BASIC_DNA_TASKS = [
     LightevalTaskConfig(
-        name="basic_dna_cf",
+        name=f"basic_dna_{formulation.name.lower()}",
         prompt_function=get_mcq_prompt_function(
             Language.ENGLISH,
             lambda line: {
@@ -144,14 +175,96 @@ BASIC_DNA_TASKS = [
                 "choices": line["options"],
                 "gold_idx": line["answer_index"],
             },
-            formulation=BASIC_DNA_FORMULATION,
+            formulation=formulation,
         ),
         hf_repo="hf-carbon/basic-dna",
         hf_subset="default",
         evaluation_splits=("train",),
         few_shots_split="train",
-        metrics=get_metrics_for_formulation(BASIC_DNA_FORMULATION, BASIC_DNA_METRICS),
+        metrics=get_metrics_for_formulation(formulation, qa_metrics),
     )
+    for formulation in all_qa_formulations
+]
+
+GPQA_BIOLOGY_MCQ_TASKS = [
+    LightevalTaskConfig(
+        name=f"gpqa_biology_mcq_{formulation.name.lower()}",
+        prompt_function=get_mcq_prompt_function(
+            Language.ENGLISH,
+            lambda line: {
+                "question": line["question"],
+                "choices": line["options"],
+                "gold_idx": line["answer_index"],
+            },
+            formulation=formulation,
+        ),
+        hf_repo="hf-carbon/gpqa-biology-mcq",
+        hf_subset="gpqa_main",
+        evaluation_splits=("train",),
+        few_shots_split="train",
+        metrics=get_metrics_for_formulation(formulation, qa_metrics),
+    )
+    for formulation in all_qa_formulations
+]
+
+SCIEVAL_MCQ_TASKS = [
+    LightevalTaskConfig(
+        name=f"scieval_mcq_{formulation.name.lower()}",
+        prompt_function=get_mcq_prompt_function(
+            Language.ENGLISH,
+            lambda line: {
+                "question": line["question"],
+                "choices": line["options"],
+                "gold_idx": line["answer_index"],
+            },
+            formulation=formulation,
+        ),
+        hf_repo="hf-carbon/scieval-biology",
+        hf_subset="mcq",
+        evaluation_splits=("test_mcq",),
+        metrics=get_metrics_for_formulation(formulation, qa_metrics),
+    )
+    for formulation in all_qa_formulations
+]
+
+SCIEVAL_MCQ_GENETICS_TASKS = [
+    LightevalTaskConfig(
+        name=f"scieval_mcq_genetics_{formulation.name.lower()}",
+        prompt_function=get_mcq_prompt_function(
+            Language.ENGLISH,
+            lambda line: {
+                "question": line["question"],
+                "choices": line["options"],
+                "gold_idx": line["answer_index"],
+            },
+            formulation=formulation,
+        ),
+        hf_repo="hf-carbon/scieval-biology",
+        hf_subset="mcq_genetics",
+        evaluation_splits=("test_mcq",),
+        metrics=get_metrics_for_formulation(formulation, qa_metrics),
+    )
+    for formulation in all_qa_formulations
+]
+
+SCIKNOWEVAL_MCQ_TASKS = [
+    LightevalTaskConfig(
+        name=f"sciknoweval_mcq_{formulation.name.lower()}",
+        prompt_function=get_mcq_prompt_function(
+            Language.ENGLISH,
+            lambda line: {
+                "question": line["question"],
+                "choices": line["options"],
+                "gold_idx": line["answer_index"],
+            },
+            formulation=formulation,
+        ),
+        hf_repo="hf-carbon/sciknoweval-biology",
+        hf_subset="mcq-4-choices-formatted",
+        evaluation_splits=("test",),
+        metrics=get_metrics_for_formulation(formulation, qa_metrics),
+    )
+    for formulation in all_qa_formulations
 ]
 
 TASKS_TABLE = (
@@ -159,5 +272,10 @@ TASKS_TABLE = (
     + MMLU_TASKS
     + MMLU_PRO_TASKS
     + MMLU_PRO_BIOLOGY_TASKS
+    + LAB_BENCH_SEQQA_TASKS
     + BASIC_DNA_TASKS
+    + GPQA_BIOLOGY_MCQ_TASKS
+    + SCIEVAL_MCQ_TASKS
+    + SCIEVAL_MCQ_GENETICS_TASKS
+    + SCIKNOWEVAL_MCQ_TASKS
 )
