@@ -124,6 +124,57 @@ MMLU_PRO_BIOLOGY_TASKS = [
     for formulation in all_qa_formulations
 ]
 
+MMLU_REDUX_BIOLOGY_SUBSETS = [
+    "college_biology",
+    "high_school_biology",
+    "medical_genetics",
+]
+
+MMLU_REDUX_BIOLOGY_TASKS = [
+    LightevalTaskConfig(
+        name=f"mmlu_redux_{formulation.name.lower()}:{subset}",
+        prompt_function=get_mcq_prompt_function(
+            Language.ENGLISH,
+            lambda line: {
+                "question": line["question"],
+                "choices": line["options"],
+                "gold_idx": line["answer_index"],
+            },
+            formulation=formulation,
+        ),
+        hf_repo="hf-carbon/mmlu-redux-2.0-biology",
+        hf_subset=subset,
+        hf_avail_splits=("train",),
+        evaluation_splits=("train",),
+        few_shots_split="train",
+        metrics=get_metrics_for_formulation(formulation, qa_metrics),
+    )
+    for subset in MMLU_REDUX_BIOLOGY_SUBSETS
+    for formulation in all_qa_formulations
+]
+
+HLE_GOLD_BIO_TASKS = [
+    LightevalTaskConfig(
+        name=f"hle_gold_bio_{formulation.name.lower()}",
+        prompt_function=get_mcq_prompt_function(
+            Language.ENGLISH,
+            lambda line: {
+                "question": line["question"],
+                "choices": line["options"],
+                "gold_idx": line["answer_index"],
+            },
+            formulation=formulation,
+        ),
+        hf_repo="hf-carbon/hle-gold-bio",
+        hf_subset="multiple_choice_formatted",
+        hf_avail_splits=("train",),
+        evaluation_splits=("train",),
+        few_shots_split="train",
+        metrics=get_metrics_for_formulation(formulation, qa_metrics),
+    )
+    for formulation in all_qa_formulations
+]
+
 LAB_BENCH_SEQQA_SUBTASKS = [
     "ORF-seq-AAid-v1-public",
     "ORF-seq-AAseq-v1-public",
@@ -162,6 +213,27 @@ LAB_BENCH_SEQQA_TASKS = [
         metrics=get_metrics_for_formulation(formulation, qa_metrics),
     )
     for subtask in ["all"] + LAB_BENCH_SEQQA_SUBTASKS
+    for formulation in all_qa_formulations
+]
+
+LAB_BENCH_CLONINGSCENARIOS_TASKS = [
+    LightevalTaskConfig(
+        name=f"lab_bench_cloningscenarios_{formulation.name.lower()}",
+        prompt_function=get_mcq_prompt_function(
+            Language.ENGLISH,
+            lambda line: {
+                "question": line["question"],
+                "choices": line["options"],
+                "gold_idx": int(line["answer_index"]),
+            },
+            formulation=formulation,
+        ),
+        hf_repo="hf-carbon/lab-bench",
+        hf_subset="CloningScenarios",
+        hf_avail_splits=("train",),
+        evaluation_splits=("train",),
+        metrics=get_metrics_for_formulation(formulation, qa_metrics),
+    )
     for formulation in all_qa_formulations
 ]
 
@@ -207,6 +279,26 @@ GPQA_BIOLOGY_MCQ_TASKS = [
     for formulation in all_qa_formulations
 ]
 
+WMDP_BIO_TASKS = [
+    LightevalTaskConfig(
+        name=f"wmdp_bio_{formulation.name.lower()}",
+        prompt_function=get_mcq_prompt_function(
+            Language.ENGLISH,
+            lambda line: {
+                "question": line["question"],
+                "choices": line["options"],
+                "gold_idx": line["answer_index"],
+            },
+            formulation=formulation,
+        ),
+        hf_repo="hf-carbon/wmdp",
+        hf_subset="wmdp-bio",
+        evaluation_splits=("test",),
+        metrics=get_metrics_for_formulation(formulation, qa_metrics),
+    )
+    for formulation in all_qa_formulations
+]
+
 SCIEVAL_MCQ_TASKS = [
     LightevalTaskConfig(
         name=f"scieval_mcq_{formulation.name.lower()}",
@@ -221,7 +313,7 @@ SCIEVAL_MCQ_TASKS = [
         ),
         hf_repo="hf-carbon/scieval-biology",
         hf_subset="mcq",
-        evaluation_splits=("test_mcq",),
+        evaluation_splits=("validation_mcq",),
         metrics=get_metrics_for_formulation(formulation, qa_metrics),
     )
     for formulation in all_qa_formulations
@@ -272,9 +364,13 @@ TASKS_TABLE = (
     + MMLU_TASKS
     + MMLU_PRO_TASKS
     + MMLU_PRO_BIOLOGY_TASKS
+    + MMLU_REDUX_BIOLOGY_TASKS
+    + HLE_GOLD_BIO_TASKS
     + LAB_BENCH_SEQQA_TASKS
+    + LAB_BENCH_CLONINGSCENARIOS_TASKS
     + BASIC_DNA_TASKS
     + GPQA_BIOLOGY_MCQ_TASKS
+    + WMDP_BIO_TASKS
     + SCIEVAL_MCQ_TASKS
     + SCIEVAL_MCQ_GENETICS_TASKS
     + SCIKNOWEVAL_MCQ_TASKS
