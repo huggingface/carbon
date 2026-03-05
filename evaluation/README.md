@@ -8,10 +8,19 @@ uv venv --python 3.12
 ```
 
 ## Install dependencies
-Install evaluation dependencies with `uv` (from `pyproject.toml`):
+
+First install the nightly build of vLLM (needed for Qwen3.5 models until v0.17.0 is released):
 
 ```sh
-uv sync
+uv pip install -U vllm --torch-backend=auto \
+  --extra-index-url https://wheels.vllm.ai/nightly
+```
+
+
+Then install the remaining dependencies with `uv` (from `pyproject.toml`):
+
+```sh
+uv sync --inexact 
 ```
 
 Some evals support `--use_evo2` and require Evo2 plus YAML support:
