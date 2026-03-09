@@ -1,7 +1,7 @@
 arc_cf
 hellaswag_cf
-mmlu_cf
-mmlu_pro_cf
+mmlu_mcf
+mmlu_pro_mcf
 openbookqa_cf
 piqa_cf
 winogrande_cf
