@@ -1,0 +1,16 @@
+basic_dna_mcf
+gpqa_biology_mcq_mcf
+hle_gold_bio_mcf
+lab_bench_cloningscenarios_mcf
+lab_bench_seqqa_mcf
+mmlu_mcf:college_biology
+mmlu_mcf:high_school_biology
+mmlu_mcf:medical_genetics
+mmlu_pro_biology_mcf
+mmlu_redux_mcf:college_biology
+mmlu_redux_mcf:high_school_biology
+mmlu_redux_mcf:medical_genetics
+scieval_mcq_genetics_mcf
+scieval_mcq_mcf
+sciknoweval_mcq_mcf
+wmdp_bio_mcf

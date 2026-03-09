@@ -118,7 +118,7 @@ cd "$REPO_ROOT"
 uv run --project "${REPO_ROOT}/evaluation" lighteval vllm \
   "$MODEL_CONFIG" \
   "$TASK" \
-  --custom-tasks evaluation/lighteval_tasks.py \
+  --custom-tasks evaluation/lighteval_tasks/tasks.py \
   --output-dir "$OUTPUT_DIR" \
   --save-details \
   --push-to-hub \

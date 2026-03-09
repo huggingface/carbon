@@ -1,0 +1,7 @@
+arc_cf
+hellaswag_cf
+mmlu_cf
+mmlu_pro_cf
+openbookqa_cf
+piqa_cf
+winogrande_cf

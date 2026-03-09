@@ -9,17 +9,19 @@ description = "Dependencies for Carbon evaluation scripts"
 requires-python = ">=3.12"
 readme = "README.md"
 dependencies = [
-  "datasets",
   "accelerate",
-  "torch==2.10.0+cu129; platform_system == 'Linux' and platform_machine == 'x86_64'",
-  "pandas",
-  "pyarrow",
-  "polars",
-  "pyfaidx",
-  "scipy",
-  "scikit-learn",
+  "datasets",
+  "inspect-evals",
   "lighteval @ git+https://github.com/huggingface/lighteval.git@33acf35f02c41d234c7df5cbdf1fd3e9d33ecd76",
   "more-itertools", # Needed for lighteval
+  "pandas",
+  "polars",
+  "pyarrow",
+  "pyfaidx",
+  "scikit-learn",
+  "scipy",
+  "torch==2.10.0+cu129; platform_system == 'Linux' and platform_machine == 'x86_64'",
+  "vllm==0.17.0"
 ]
 
 [project.optional-dependencies]

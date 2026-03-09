@@ -1,7 +1,0 @@
-arc_cf|0
-hellaswag_cf|0
-mmlu_cf|0
-mmlu_pro_cf|0
-openbookqa_cf|0
-piqa_cf|0
-winogrande_cf|0
