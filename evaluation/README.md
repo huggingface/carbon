@@ -172,6 +172,19 @@ uv run lighteval vllm \
   --results-org hf-carbon
 ```
 
+To pass sampling parameters, set them inside `generation_parameters` in the model config string. For example:
+
+```sh
+uv run lighteval vllm \
+  "model_name=Qwen/Qwen3.5-0.8B-Base,dtype=bfloat16,override_chat_template=false,trust_remote_code=True,tensor_parallel_size=2,max_model_length=8192,max_num_batched_tokens=8192,generation_parameters={temperature:0.7,top_p:0.9},gpu_memory_utilization=0.85,max_num_seqs=16" \
+  "mmlu_pro_biology_cf" \
+  --custom-tasks evaluation/lighteval_tasks/tasks.py \
+  --output-dir . \
+  --save-details \
+  --push-to-hub \
+  --results-org hf-carbon
+```
+
 Or submit via Slurm:
 
 ```sh
@@ -187,7 +200,7 @@ The results will be pushed to the [`hf-carbon`](https://huggingface.co/hf-carbon
 
 ```sh
 uv run lighteval vllm \
-  "model_name=Qwen/Qwen3.5-0.8B-Base,dtype=bfloat16,override_chat_template=false,trust_remote_code=True,tensor_parallel_size=2,max_model_length=8192,max_num_batched_tokens=8192,generation_parameters={temperature:0},gpu_memory_utilization=0.85,max_num_seqs=16" \
+  "model_name=Qwen/Qwen3.5-0.8B-Base,dtype=bfloat16,override_chat_template=false,trust_remote_code=True,tensor_parallel_size=2,max_model_length=8192,max_num_batched_tokens=8192,generation_parameters={temperature:0.7,top_p:0.9},gpu_memory_utilization=0.85,max_num_seqs=16" \
   "lighteval_tasks/{en,bio}.txt" \
   --custom-tasks evaluation/lighteval_tasks/tasks.py \
   --output-dir . \
@@ -239,10 +252,46 @@ uv run inspect eval inspect_evals/lab_bench_seqqa \
   --display plain
 ```
 
+To evaluate an API-hosted model instead, set `OPENAI_API_KEY`, swap the model to `openai/gpt-5.4`, and optionally set `--reasoning-effort`:
+
+```sh
+export OPENAI_API_KEY=your-openai-api-key
+
+uv run inspect eval inspect_evals/lab_bench_seqqa \
+  --model openai/gpt-5.4 \
+  --reasoning-effort high \
+  --max-samples 64 \
+  --log-dir ./results/inspect-logs/ \
+  --display plain
+```
+
+For `gpt-5.4`, valid reasoning-effort values are `none`, `low`, `medium`, `high`, and `xhigh`.
+
 You can then sync the results to the Hub as follows:
 
 ```sh
 uv run inspect view bundle \
   --log-dir ./results/inspect-logs \
-  --output-dir hf/hf-carbon/inspect-evals
+  --output-dir hf/hf-carbon/inspect-logs
 ```
+
+Or submit the eval via Slurm, which also syncs the results to the Hub automatically:
+
+```sh
+sbatch evaluation/launch_inspect.slurm \
+  --model Qwen/Qwen3.5-4B \
+  --task lab_bench_seqqa \
+  --tp 1 \
+  --dp 1
+```
+
+For API-hosted models, use the API launcher instead:
+
+```sh
+sbatch evaluation/launch_inspect_api.slurm \
+  --model openai/gpt-5.4 \
+  --task lab_bench_seqqa \
+  --reasoning-effort high
+```
+
+By default, `launch_inspect.slurm` syncs the bundled viewer to `hf/<results-org>/inspect-logs_<model>_<revision>`, derived from the required `--model` argument and the selected `--revision` (which defaults to `main`). `launch_inspect_api.slurm` uses `hf/<results-org>/inspect-logs_<provider>_<model>`, derived from its required `--model` argument. In both cases, `--results-org` changes the destination namespace.
