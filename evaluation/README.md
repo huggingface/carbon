@@ -250,13 +250,14 @@ To compare two SeqQA details datasets with the paired scatter and grouped bar pl
 
 ```sh
 uv run --directory evaluation python scripts/plot_seqqa_pair.py \
-  --base-dataset hf-carbon/details_Qwen__Qwen3-4B-Base_private \
-  --mid-dataset hf-carbon/details_abl10-mix-papers-regex-lr2e5__step_20000_private \
+  --model-a-dataset hf-carbon/details_Qwen__Qwen3-4B-Base_private \
+  --model-b-dataset hf-carbon/details_abl10-mix-papers-regex-lr2e5__step_20000_private \
+  --difficulty-dataset hf-carbon/details_Qwen__Qwen3.5-35B-A3B-Base_private \
   --config lab_bench_seqqa_mcf_all_0 \
   --split latest
 ```
 
-By default this writes `scatter.png` and `bar.png` under `scratch/seqqa_pair/{base_org}/{base_model}__vs__{mid_org}__{mid_model}/`.
+By default this writes `scatter.png` and `bar.png` under `scratch/seqqa_pair/{difficulty_org}/{difficulty_model}__ref__{model_a_org}__{model_a_model}__vs__{model_b_org}__{model_b_model}/`.
 
 ## Post-trained models
 
