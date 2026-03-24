@@ -1,0 +1,8 @@
+# Core (required for all scripts)
+biopython>=1.83
+requests>=2.31
+pandas>=2.1
+
+# Optional C-extension packages (install separately if needed):
+# pip install pybedtools pysam pyBigWig MOODS-python
+# These require bedtools, htslib, and libBigWig system libraries.
