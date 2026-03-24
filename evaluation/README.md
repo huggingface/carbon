@@ -231,6 +231,33 @@ The table below covers the curated biology task list in [`lighteval_tasks/bio.tx
 | `sciknoweval_mcq_mcf` | Biology questions from SciKnowEval aimed at measuring scientific knowledge and comprehension. | [dataset](https://huggingface.co/datasets/hf-carbon/sciknoweval-biology/viewer/mcq-4-choices-formatted/test) | 3935 | 4 | 35/122.8/3267 |
 | `wmdp_bio_mcf` | Biosecurity-focused questions from WMDP about potentially hazardous biological knowledge. | [dataset](https://huggingface.co/datasets/hf-carbon/wmdp/viewer/wmdp-bio/test) | 1273 | 4 | 33/91.5/757 |
 
+### SeqQA plots
+
+Use the scripts below from the repo root. Both commands assume the eval environment and Hugging Face auth are already set up.
+
+To plot difficulty buckets for a single SeqQA details dataset:
+
+```sh
+uv run --directory evaluation python scripts/plot_seqqa_difficulty.py \
+  --dataset hf-carbon/details_Qwen__Qwen3-4B-Base_private \
+  --config lab_bench_seqqa_mcf_all_0 \
+  --split latest
+```
+
+By default this writes `threshold.png`, `percentile.png`, and `dist.png` under `scratch/seqqa_difficulty/{org}/{model_name}/`.
+
+To compare two SeqQA details datasets with the paired scatter and grouped bar plots:
+
+```sh
+uv run --directory evaluation python scripts/plot_seqqa_pair.py \
+  --base-dataset hf-carbon/details_Qwen__Qwen3-4B-Base_private \
+  --mid-dataset hf-carbon/details_abl10-mix-papers-regex-lr2e5__step_20000_private \
+  --config lab_bench_seqqa_mcf_all_0 \
+  --split latest
+```
+
+By default this writes `scatter.png` and `bar.png` under `scratch/seqqa_pair/{base_org}/{base_model}__vs__{mid_org}__{mid_model}/`.
+
 ## Post-trained models
 
 For post-trained models, we use the excellent [Inspect](https://inspect.aisi.org.uk) framework, which includes LAB-Bench [v1](https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/lab_bench) and [v2](https://github.com/EdisonScientific/labbench2) as an open [issue](https://github.com/UKGovernmentBEIS/inspect_evals/issues/1204).

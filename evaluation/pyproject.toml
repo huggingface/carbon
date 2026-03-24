@@ -22,7 +22,8 @@ dependencies = [
   "scipy",
   "torch==2.10.0+cu129; platform_system == 'Linux' and platform_machine == 'x86_64'",
   "vllm==0.17.1",
-  "google-genai>=1.56.0"
+  "google-genai>=1.56.0",
+  "matplotlib"
 ]
 
 [project.optional-dependencies]
