@@ -216,6 +216,30 @@ LAB_BENCH_SEQQA_TASKS = [
     for formulation in all_qa_formulations
 ]
 
+LAB_BENCH_SEQQA_DIFFICULTY_SUBSETS = ["SeqQA_Easy", "SeqQA_Medium", "SeqQA_Hard"]
+
+LAB_BENCH_SEQQA_DIFFICULTY_TASKS = [
+    LightevalTaskConfig(
+        name=f"lab_bench_seqqa_difficulty_{formulation.name.lower()}:{subset}",
+        prompt_function=get_mcq_prompt_function(
+            Language.ENGLISH,
+            lambda line: {
+                "question": line["question"],
+                "choices": line["options"],
+                "gold_idx": int(line["answer_index"]),
+            },
+            formulation=formulation,
+        ),
+        hf_repo="hf-carbon/lab-bench",
+        hf_subset=subset,
+        hf_avail_splits=("train",),
+        evaluation_splits=("train",),
+        metrics=get_metrics_for_formulation(formulation, qa_metrics),
+    )
+    for subset in LAB_BENCH_SEQQA_DIFFICULTY_SUBSETS
+    for formulation in all_qa_formulations
+]
+
 LAB_BENCH_CLONINGSCENARIOS_TASKS = [
     LightevalTaskConfig(
         name=f"lab_bench_cloningscenarios_{formulation.name.lower()}",
@@ -367,6 +391,7 @@ TASKS_TABLE = (
     + MMLU_REDUX_BIOLOGY_TASKS
     + HLE_GOLD_BIO_TASKS
     + LAB_BENCH_SEQQA_TASKS
+    + LAB_BENCH_SEQQA_DIFFICULTY_TASKS
     + LAB_BENCH_CLONINGSCENARIOS_TASKS
     + BASIC_DNA_TASKS
     + GPQA_BIOLOGY_MCQ_TASKS
