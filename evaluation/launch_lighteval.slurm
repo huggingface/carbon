@@ -108,7 +108,7 @@ if ! hf auth whoami >/dev/null 2>&1; then
   exit 1
 fi
 
-MODEL_CONFIG="model_name=${MODEL},dtype=bfloat16,override_chat_template=false,tensor_parallel_size=${TP},data_parallel_size=${DP}"
+MODEL_CONFIG="model_name=${MODEL},dtype=bfloat16,override_chat_template=false,tensor_parallel_size=${TP},data_parallel_size=${DP},trust_remote_code=True,gpu_memory_utilization=0.85,max_num_seqs=16"
 if [[ -n "$MODEL_REVISION" ]]; then
   MODEL_CONFIG="${MODEL_CONFIG},revision=${MODEL_REVISION}"
 fi

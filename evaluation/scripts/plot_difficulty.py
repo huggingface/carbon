@@ -1,7 +1,7 @@
 """Plot SeqQA difficulty diagnostics.
 
 Usage:
-    uv run --directory evaluation python scripts/plot_seqqa_difficulty.py \
+    uv run --directory evaluation python scripts/plot_difficulty.py \
         --dataset hf-carbon/details_Qwen__Qwen3-4B-Base_private \
         --config lab_bench_seqqa_mcf_all_0 \
         --split latest

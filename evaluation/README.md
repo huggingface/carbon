@@ -259,6 +259,51 @@ uv run --directory evaluation python scripts/plot_seqqa_pair.py \
 
 By default this writes `scatter.png` and `bar.png` under `scratch/seqqa_pair/{difficulty_org}/{difficulty_model}__ref__{model_a_org}__{model_a_model}__vs__{model_b_org}__{model_b_model}/`.
 
+### SeqQA IRT fitting
+
+Use the script below from the repo root after activating the eval environment and confirming Hugging Face auth:
+
+```sh
+uv run --directory evaluation python scripts/fit_irt.py \
+  --profile seqqa \
+  --collection hf-carbon/lighteval-outputs \
+  --config lab_bench_seqqa_mcf_all_0 \
+  --split latest \
+  --device cpu
+```
+
+This discovers details datasets in the collection, excludes repo ids containing `abl`, keeps only repos exposing `lab_bench_seqqa_mcf_all_0`, and fits a 2PL IRT model on `metric.acc`.
+Collection inspection and per-dataset loads run in parallel; adjust concurrency with `--max-workers` if needed.
+
+By default it writes the following under `scratch/seqqa_irt/lab_bench_seqqa_mcf_all_0/latest/non_abl/`:
+
+- `dataset_manifest.csv`: included/excluded repos and exclusion reasons.
+- `py_irt_input.jsonl`: one `{subject_id, responses}` row per included dataset.
+- `irt_item_params.csv`: raw 2PL item parameters with discrimination `a` and difficulty `b`.
+- `irt_item_difficulty.csv`: SeqQA metadata joined to the fitted item parameters, sorted from hardest to easiest by `difficulty_b`.
+- `subject_summary.csv`: per-dataset observed accuracy and fitted ability.
+
+For a fast smoke test, cap the discovered pool and reduce epochs:
+
+```sh
+uv run --directory evaluation python scripts/fit_irt.py \
+  --profile seqqa \
+  --limit-datasets 3 \
+  --epochs 20 \
+  --device cpu
+```
+
+To push the generated output files to the Hub as a dataset with one subset per file:
+
+```sh
+uv run --directory evaluation python scripts/push_irt_outputs.py \
+  --profile seqqa \
+  --hub-repo-id hf-carbon/seqqa-irt-difficulty
+```
+
+This publishes the following subsets from `scratch/seqqa_irt/lab_bench_seqqa_mcf_all_0/latest/non_abl/`:
+`dataset_manifest`, `py_irt_input`, `irt_item_params`, `irt_item_difficulty`, and `subject_summary`.
+
 ## Post-trained models
 
 For post-trained models, we use the excellent [Inspect](https://inspect.aisi.org.uk) framework, which includes LAB-Bench [v1](https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/lab_bench) and [v2](https://github.com/EdisonScientific/labbench2) as an open [issue](https://github.com/UKGovernmentBEIS/inspect_evals/issues/1204).

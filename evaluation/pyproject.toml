@@ -18,6 +18,7 @@ dependencies = [
   "polars",
   "pyarrow",
   "pyfaidx",
+  "pyro-ppl",
   "scikit-learn",
   "scipy",
   "torch==2.10.0+cu129; platform_system == 'Linux' and platform_machine == 'x86_64'",
