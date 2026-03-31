@@ -6,7 +6,7 @@
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:1
 #SBATCH --time=02:00:00
-#SBATCH --qos=high
+#SBATCH --qos=normal
 
 # Usage: sbatch run_seq_recovery_eval.sbatch <model_path> <prefix_mode> <model_short_name> <checkpoint> [revision] [max_seq_len] [batch_size]
 # prefix_mode: "dna_tags" (hybrid), "no_prefix" (6-mer raw), or "default" (uses <s>)

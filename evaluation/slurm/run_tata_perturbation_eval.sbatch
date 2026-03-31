@@ -6,7 +6,7 @@
 #SBATCH --ntasks=1
 #SBATCH --gres=gpu:1
 #SBATCH --time=04:00:00
-#SBATCH --qos=high
+#SBATCH --qos=normal
 
 # Usage: sbatch run_tata_perturbation_eval.sbatch <model_path> <prefix_mode> <model_name> [revision]
 # prefix_mode: "dna_tags" (hybrid), "no_prefix" (6-mer raw), or "default"
