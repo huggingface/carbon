@@ -86,6 +86,21 @@ def parse_args() -> argparse.Namespace:
         choices=["dataset", "model"],
         help="HF repo type",
     )
+    parser.add_argument(
+        "--use_dna_tags",
+        action="store_true",
+        help="Wrap DNA sequences with <dna> prefix for hybrid tokenizer models",
+    )
+    parser.add_argument(
+        "--no_prefix",
+        action="store_true",
+        help="Don't add any prefix (no <s>). Use for models without BOS token.",
+    )
+    parser.add_argument(
+        "--model_name",
+        default=None,
+        help="Override model name for output file naming. If not provided, uses the last component of --model path.",
+    )
     return parser.parse_args()
 
 
@@ -137,6 +152,8 @@ def _load_model_and_tokenizer(model: str, revision: str, dtype: torch.dtype):
     tokenizer = AutoTokenizer.from_pretrained(
         model, revision=revision, trust_remote_code=True
     )
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
     model_obj = AutoModelForCausalLM.from_pretrained(
         model, revision=revision, trust_remote_code=True, dtype=dtype
     )
@@ -173,8 +190,12 @@ def compute_logits_shard(args):
                 outputs = model_obj(**inputs)
 
             for j, seq in enumerate(batch_sequences):
-                seq_len = len(tokenizer(seq).input_ids)
-                last_token_logits = outputs.logits[j, seq_len - 2, :]
+                tok_result = tokenizer(seq)
+                tok_ids = tok_result['input_ids'] if isinstance(tok_result, dict) else tok_result.input_ids
+                seq_len = len(tok_ids)
+                # Skip EOS if present; otherwise use last token position
+                offset = 2 if tok_ids[-1] == tokenizer.eos_token_id else 1
+                last_token_logits = outputs.logits[j, seq_len - offset, :]
                 probs = (
                     F.softmax(last_token_logits, dim=0).cpu().float().numpy().tolist()
                 )
@@ -275,6 +296,7 @@ def compute_logits_parallel(
 
 
 def get_char_indices(vocab: Dict[str, int]) -> Dict[str, List[int]]:
+    DNA_BASES = set("ACGT")
     tokens = list(vocab.keys())
     token_ids = list(vocab.values())
     sorted_pairs = sorted(zip(token_ids, tokens))
@@ -282,7 +304,7 @@ def get_char_indices(vocab: Dict[str, int]) -> Dict[str, List[int]]:
 
     char_indices = {}
     for i, token in enumerate(sorted_tokens):
-        if isinstance(token, str) and len(token) > 0:
+        if isinstance(token, str) and len(token) > 0 and all(c in DNA_BASES for c in token):
             first_char = token[0]
             if first_char not in char_indices:
                 char_indices[first_char] = []
@@ -472,9 +494,26 @@ def main() -> None:
     if args.revision:
         print(f"Revision: {args.revision}")
 
+    # Fail fast if context_length exceeds model capacity (6 bp per token for 6-mer)
+    if not args.use_evo2:
+        from transformers import AutoConfig
+        max_pos = AutoConfig.from_pretrained(args.model, revision=args.revision, trust_remote_code=True).max_position_embeddings
+        if args.context_length > max_pos * 6:
+            raise ValueError(f"context_length={args.context_length} bp > model max {max_pos} tokens × 6 = {max_pos * 6} bp")
+
     clinvar_df = load_and_prepare_data(
         args.hg38_path, args.clinvar_path, args.context_length
     )
+
+    # Add appropriate prefix based on model type
+    # Default: no prefix - tokenizer handles BOS/EOS with add_special_tokens=True
+    if args.use_dna_tags:
+        print("Adding <dna> prefix for hybrid tokenizer...")
+        clinvar_df["sequence"] = clinvar_df["sequence"].apply(lambda x: f"<dna>{x}")
+    elif args.no_prefix:
+        print("No prefix mode (explicit)")
+    else:
+        print("Default mode - tokenizer handles special tokens")
 
     if args.use_evo2:
         p_ref, p_alt = compute_probabilities_evo2(
@@ -508,9 +547,14 @@ def main() -> None:
     )
 
     os.makedirs(args.output_dir, exist_ok=True)
-    model_name = args.model.split("/")[-1]
-    revision_tag = args.revision or "main"
-    output_basename = f"{model_name}_{revision_tag}_clinvar_{dtype}"
+    # Use --model_name if provided, otherwise fall back to last component of path
+    model_name = args.model_name if args.model_name else args.model.split("/")[-1]
+    # Simpler naming when model_name is explicitly provided
+    if args.model_name:
+        output_basename = f"{model_name}_{dtype}"
+    else:
+        revision_tag = args.revision or "main"
+        output_basename = f"{model_name}_{revision_tag}_clinvar_{dtype}"
 
     output_path = os.path.join(args.output_dir, f"{output_basename}.parquet")
     save_results(clinvar_df.drop(columns=["sequence", "hash_index"]), output_path)

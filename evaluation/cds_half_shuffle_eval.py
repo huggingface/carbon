@@ -26,6 +26,17 @@ def parse_args() -> argparse.Namespace:
         help="Optional HF dataset config/subset name",
     )
     parser.add_argument(
+        "--task",
+        default="cds_half_shuffle",
+        choices=[
+            "cds_half_shuffle",
+            "synonymous_codon_substitution",
+            "tata_perturbation",
+            "reversed_promoter_sequences",
+        ],
+        help="Evaluation task definition (controls positive/negative columns).",
+    )
+    parser.add_argument(
         "--split",
         default="train",
         help="Dataset split to evaluate",
@@ -88,6 +99,21 @@ def parse_args() -> argparse.Namespace:
         choices=["dataset", "model"],
         help="HF repo type",
     )
+    parser.add_argument(
+        "--use_dna_tags",
+        action="store_true",
+        help="Wrap DNA sequences with <dna>...</dna> tags for hybrid tokenizer models",
+    )
+    parser.add_argument(
+        "--no_prefix",
+        action="store_true",
+        help="Don't add any prefix (no <s>). Use for models without BOS token.",
+    )
+    parser.add_argument(
+        "--model_name",
+        default=None,
+        help="Override model name for output file naming.",
+    )
     return parser.parse_args()
 
 
@@ -101,6 +127,27 @@ def _load_dataset(args: argparse.Namespace) -> pd.DataFrame:
 
     ds = load_dataset(args.dataset, args.subset, split=args.split)
     return ds.to_pandas()
+
+
+def _task_columns(task: str) -> tuple[str, str]:
+    if task == "cds_half_shuffle":
+        return "original_sequence", "input"
+    if task == "synonymous_codon_substitution":
+        return "original_sequence", "sequence"
+    if task == "tata_perturbation":
+        return "original_sequence", "sequence"
+    if task == "reversed_promoter_sequences":
+        return "original_sequence", "sequence"
+    raise ValueError(f"Unsupported task: {task}")
+
+
+def _wrap_sequences(sequences: list, use_dna_tags: bool, no_prefix: bool) -> list:
+    if use_dna_tags:
+        return [f"<dna>{seq}</dna>" for seq in sequences]
+    elif no_prefix:
+        return sequences
+    else:
+        return sequences
 
 
 def _score_sequences_hf(
@@ -122,6 +169,7 @@ def _score_sequences_hf(
             padding=True,
             truncation=True,
             max_length=max_length,
+            add_special_tokens=False,
         )
         input_ids = enc["input_ids"].to(model.device)
         attention_mask = enc["attention_mask"].to(model.device)
@@ -222,13 +270,17 @@ def main() -> None:
     if args.subset:
         print(f"Subset: {args.subset}")
     print(f"Split: {args.split}")
+    print(f"Task: {args.task}")
 
     df = _load_dataset(args)
-    pos_col = "original_sequence"
-    neg_col = "input"
+    pos_col, neg_col = _task_columns(args.task)
 
     pos_seqs = df[pos_col].astype(str).tolist()
     neg_seqs = df[neg_col].astype(str).tolist()
+
+    # Wrap sequences with DNA tags if needed
+    pos_seqs = _wrap_sequences(pos_seqs, args.use_dna_tags, args.no_prefix)
+    neg_seqs = _wrap_sequences(neg_seqs, args.use_dna_tags, args.no_prefix)
 
     if args.use_evo2:
         model_name = _evo2_model_name(args.model)
@@ -238,6 +290,8 @@ def main() -> None:
         tokenizer = AutoTokenizer.from_pretrained(
             args.model, revision=args.revision, trust_remote_code=True
         )
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
         model = AutoModelForCausalLM.from_pretrained(
             args.model,
             revision=args.revision,
@@ -277,9 +331,12 @@ def main() -> None:
     output_df = pd.DataFrame(results)
 
     os.makedirs(args.output_dir, exist_ok=True)
-    model_name = args.model.split("/")[-1]
-    revision_tag = args.revision or "main"
-    output_basename = f"{model_name}_{revision_tag}_cds_half_shuffle_{dtype}"
+    model_name = args.model_name if args.model_name else args.model.split("/")[-1]
+    if args.model_name:
+        output_basename = f"{model_name}_{args.task}_{dtype}"
+    else:
+        revision_tag = args.revision or "main"
+        output_basename = f"{model_name}_{revision_tag}_{args.task}_{dtype}"
     output_path = os.path.join(args.output_dir, f"{output_basename}.parquet")
     output_df.to_parquet(output_path)
 
@@ -289,6 +346,7 @@ def main() -> None:
         "dataset": args.dataset,
         "subset": args.subset,
         "split": args.split,
+        "task": args.task,
         "pos_col": pos_col,
         "neg_col": neg_col,
         "accuracy": accuracy,

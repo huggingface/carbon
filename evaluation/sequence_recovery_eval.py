@@ -98,6 +98,29 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Limit number of sequences to evaluate (for testing). If None, evaluates all sequences.",
     )
+    parser.add_argument(
+        "--use_dna_tags",
+        action="store_true",
+        help="Wrap DNA sequences with <dna>...</dna> tags for hybrid tokenizer models",
+    )
+    parser.add_argument(
+        "--no_prefix",
+        action="store_true",
+        help="Don't add any prefix token (no <s> or <dna>). Use for models without BOS token.",
+    )
+    parser.add_argument(
+        "--use_species_tags",
+        action="store_true",
+        help="Prepend species metadata tag before <dna> tag (requires --use_dna_tags). "
+             "Maps dataset 'type' column to tags: vertebrate_mammalian-><mammalian_species>, "
+             "vertebrate_other-><vertebrate_non_mammalian_species>, fungi-><fungi_species>, "
+             "plant-><plant_species>, protozoa-><protozoan_species>, invertebrate-><invertebrate_species>.",
+    )
+    parser.add_argument(
+        "--model_name",
+        default=None,
+        help="Override model name for output file naming. If not provided, uses the last component of --model path.",
+    )
     return parser.parse_args()
 
 
@@ -136,10 +159,22 @@ def _load_model_and_tokenizer(model: str, revision: Optional[str], dtype: torch.
     tokenizer = AutoTokenizer.from_pretrained(
         model, revision=revision, trust_remote_code=True
     )
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
     model_obj = AutoModelForCausalLM.from_pretrained(
         model, revision=revision, trust_remote_code=True, dtype=dtype
     )
     return model_obj, tokenizer
+
+
+SPECIES_TAG_MAP = {
+    "vertebrate_mammalian": "<mammalian_species>",
+    "vertebrate_other": "<vertebrate_non_mammalian_species>",
+    "fungi": "<fungi_species>",
+    "plant": "<plant_species>",
+    "protozoa": "<protozoan_species>",
+    "invertebrate": "<invertebrate_species>",
+}
 
 
 def process_data_shard(shard_id, sequences_data, args, dtype):
@@ -153,13 +188,20 @@ def process_data_shard(shard_id, sequences_data, args, dtype):
 
     tokenizer.padding_side = "left"
 
-    special_token_ids = tokenizer.convert_tokens_to_ids(tokenizer.special_tokens)
+    # Get special token IDs - handle different tokenizer implementations
+    if hasattr(tokenizer, 'special_tokens'):
+        special_token_ids = tokenizer.convert_tokens_to_ids(tokenizer.special_tokens)
+    elif hasattr(tokenizer, 'all_special_ids'):
+        special_token_ids = tokenizer.all_special_ids
+    else:
+        special_token_ids = []
     logits_processor = LogitsProcessorList(
         [SuppressSpecialTokensLogitsProcessor(special_token_ids)]
     )
 
     sequences_shard = [item["sequence"] for item in sequences_data]
     indices_shard = [item["hash_index"] for item in sequences_data]
+    species_types = [item.get("type") for item in sequences_data] if args.use_species_tags else None
     total_sequences = len(sequences_shard)
 
     predictions = []
@@ -169,10 +211,29 @@ def process_data_shard(shard_id, sequences_data, args, dtype):
             batch_seqs = sequences_shard[i : i + args.batch_size]
             batch_indices = indices_shard[i : i + args.batch_size]
 
-            truncated_seqs = [
-                "<s>" + seq[-((min(len(seq), args.max_seq_len) // 6) * 6) :]
-                for seq in batch_seqs
-            ]
+            if args.use_dna_tags:
+                # For hybrid tokenizer: wrap with <dna> tag to trigger 6-mer tokenization
+                prefix = "<dna>"
+            elif args.no_prefix:
+                # No prefix token
+                prefix = ""
+            else:
+                # Default: use <s> as BOS token for pure 6-mer models
+                prefix = "<s>"
+
+            if args.use_species_tags and species_types is not None:
+                # Per-sequence species tag prefix: <species_tag><dna>SEQUENCE
+                batch_species = species_types[i : i + args.batch_size]
+                truncated_seqs = []
+                for seq, sp_type in zip(batch_seqs, batch_species):
+                    sp_tag = SPECIES_TAG_MAP.get(sp_type, "")
+                    truncated_seq = seq[-((min(len(seq), args.max_seq_len) // 6) * 6) :]
+                    truncated_seqs.append(sp_tag + prefix + truncated_seq)
+            else:
+                truncated_seqs = [
+                    prefix + seq[-((min(len(seq), args.max_seq_len) // 6) * 6) :]
+                    for seq in batch_seqs
+                ]
 
             inputs = tokenizer(
                 truncated_seqs,
@@ -180,7 +241,12 @@ def process_data_shard(shard_id, sequences_data, args, dtype):
                 return_tensors="pt",
                 padding=True,
                 truncation=False,
-            ).to(device)
+            )
+            # Handle both BatchEncoding objects and plain dicts (e.g., HybridDNATokenizer)
+            if hasattr(inputs, 'to'):
+                inputs = inputs.to(device)
+            else:
+                inputs = {k: v.to(device) if hasattr(v, 'to') else v for k, v in inputs.items()}
 
             with torch.inference_mode():
                 outputs = model.generate(
@@ -191,9 +257,17 @@ def process_data_shard(shard_id, sequences_data, args, dtype):
                     logits_processor=logits_processor,
                 )
 
-            batch_preds = tokenizer.batch_decode(
-                outputs[:, -args.gen_len :], skip_special_tokens=True
-            )
+            # For hybrid tokenizer, batch_decode doesn't work correctly with DNA tokens,
+            # so we use decode in a loop instead
+            if args.use_dna_tags:
+                batch_preds = [
+                    tokenizer.decode(outputs[i, -args.gen_len :].tolist())
+                    for i in range(outputs.shape[0])
+                ]
+            else:
+                batch_preds = tokenizer.batch_decode(
+                    outputs[:, -args.gen_len :], skip_special_tokens=True
+                )
 
             for pred, hash_index in zip(batch_preds, batch_indices):
                 predictions.append({"hash_index": hash_index, "pred": pred})
@@ -417,10 +491,13 @@ def process_checkpoint(args: argparse.Namespace, dtype: str) -> Dict:
         end_idx = min((i + 1) * shard_size, total_sequences)
         if start_idx < total_sequences:
             shard_df = df.iloc[start_idx:end_idx].copy()
+            shard_cols = ["sequence", "hash_index"]
+            if args.use_species_tags and "type" in shard_df.columns:
+                shard_cols.append("type")
             shards.append(
                 {
                     "shard_id": i,
-                    "data": shard_df[["sequence", "hash_index"]].to_dict("records"),
+                    "data": shard_df[shard_cols].to_dict("records"),
                     "start_idx": start_idx,
                     "end_idx": end_idx,
                 }
@@ -479,12 +556,17 @@ def process_checkpoint(args: argparse.Namespace, dtype: str) -> Dict:
     overall_mean = results_df["accuracy"].mean()
 
     os.makedirs(args.output_dir, exist_ok=True)
-    model_name = args.model.split("/")[-1]
+    # Use --model_name if provided, otherwise fall back to last component of path
+    model_name = args.model_name if args.model_name else args.model.split("/")[-1]
     revision_tag = args.revision or "main"
     test_suffix = f"_test{args.max_samples}" if args.max_samples is not None else ""
-    output_basename = (
-        f"{model_name}_{revision_tag}_{args.data_type}_{dtype}{test_suffix}"
-    )
+    # If model_name is already provided (e.g., "hybrid_50B_gener_24000"), use simpler naming
+    if args.model_name:
+        output_basename = f"{model_name}_{dtype}{test_suffix}"
+    else:
+        output_basename = (
+            f"{model_name}_{revision_tag}_{args.data_type}_{dtype}{test_suffix}"
+        )
 
     output_path = os.path.join(args.output_dir, f"{output_basename}.parquet")
     results_df[["hash_index", "pred", "label", "type", "accuracy"]].to_parquet(

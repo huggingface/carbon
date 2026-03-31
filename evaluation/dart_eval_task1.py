@@ -87,6 +87,26 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Use Evo2 scoring (official evo2 library) instead of HF AutoModel",
     )
+    parser.add_argument(
+        "--use_dna_tags",
+        action="store_true",
+        help="Wrap DNA sequences with <dna> prefix for hybrid tokenizer models",
+    )
+    parser.add_argument(
+        "--no_prefix",
+        action="store_true",
+        help="Don't add any prefix (no <s>). Use for models without BOS token.",
+    )
+    parser.add_argument(
+        "--model_name",
+        default=None,
+        help="Override model name for output directory naming.",
+    )
+    parser.add_argument(
+        "--revision",
+        default=None,
+        help="Model revision/branch/tag (e.g. step-24000)",
+    )
     return parser.parse_args()
 
 
@@ -206,58 +226,56 @@ class PairedControlDataset(Dataset):
         return torch.from_numpy(seq), torch.from_numpy(ctrl), torch.tensor(idx_orig)
 
 
-def score_causal(model, tokenizer, seqs_onehot, starts, ends, device):
-    """Score sequences using causal LM log-likelihood within the element region."""
+def score_causal(model, tokenizer, seqs_onehot, starts, ends, device, use_dna_tags=False, no_prefix=False):
+    """Score sequences using causal LM mean log-likelihood."""
     seqs_str = onehot_to_chars(seqs_onehot)
-    encoded = tokenizer.batch_encode_plus(seqs_str, return_tensors="pt", padding=True)
-    tokens = encoded["input_ids"].to(device)
-    attention_mask = encoded.get("attention_mask")
+    # Add appropriate prefix based on model type
+    # Default: no prefix - tokenizer handles BOS/EOS with add_special_tokens=True
+    if use_dna_tags:
+        seqs_str = [f"<dna>{s}" for s in seqs_str]
+    elif no_prefix:
+        pass  # No prefix for 6-mer raw models
+    # else: default - let tokenizer handle special tokens automatically
+
+    encoded = tokenizer(seqs_str, return_tensors="pt", padding=True)
+    if isinstance(encoded, dict):
+        tokens = encoded["input_ids"].to(device)
+        attention_mask = encoded.get("attention_mask")
+    else:
+        tokens = encoded.input_ids.to(device)
+        attention_mask = getattr(encoded, "attention_mask", None)
     if attention_mask is not None:
         attention_mask = attention_mask.to(device)
 
-    # Find start/end token positions
-    # For causal LM with BOS: sequence tokens start after BOS
-    bos_id = tokenizer.bos_token_id
-    eos_id = tokenizer.eos_token_id
+    batch_size = tokens.shape[0]
 
     with torch.no_grad():
         outputs = model(tokens, attention_mask=attention_mask)
-        logits = outputs.logits.swapaxes(1, 2)  # (batch, vocab, seq_len)
-        # Causal: predict token t from position t-1
-        lls = torch.zeros(tokens.shape[:2], device=device)
-        lls[:, 1:] = -F.cross_entropy(
-            logits[:, :, :-1], tokens[:, 1:], reduction="none"
-        )
+        logits = outputs.logits  # (batch, seq_len, vocab)
 
-    # Clip to element region using token positions
-    # Map bp-level starts/ends to token-level
-    # The tokenizer maps the full sequence; we need to figure out which tokens
-    # correspond to the element region.
-    # For simplicity with variable-length tokenizers (6-mer), sum all token LLs
-    # between BOS and EOS (the standard approach for causal zero-shot scoring)
-    clip_mask = torch.zeros_like(lls)
-    if bos_id is not None:
-        tok_starts = torch.where(tokens == bos_id)[1] + 1
-    else:
-        tok_starts = torch.zeros(tokens.shape[0], dtype=torch.long, device=device)
+        # Compute per-token log-likelihood (shift by 1 for causal)
+        # logits[:, :-1] predicts tokens[:, 1:]
+        shift_logits = logits[:, :-1, :].contiguous()
+        shift_labels = tokens[:, 1:].contiguous()
 
-    if eos_id is not None:
-        eos_positions = torch.where(tokens == eos_id)
-        tok_ends = torch.zeros(tokens.shape[0], dtype=torch.long, device=device)
-        for idx, pos in zip(eos_positions[0], eos_positions[1]):
-            tok_ends[idx] = pos
-    else:
-        tok_ends = (
-            attention_mask.sum(dim=1)
-            if attention_mask is not None
-            else torch.full((tokens.shape[0],), tokens.shape[1], device=device)
-        )
+        # Compute cross-entropy loss per token
+        loss_fct = torch.nn.CrossEntropyLoss(reduction='none')
+        token_losses = loss_fct(
+            shift_logits.view(-1, shift_logits.size(-1)),
+            shift_labels.view(-1)
+        ).view(batch_size, -1)
 
-    for i in range(lls.shape[1]):
-        clip_mask[:, i] = ((i >= tok_starts) & (i < tok_ends)).float()
+        # Mask out padding tokens
+        if attention_mask is not None:
+            # attention_mask[:, 1:] corresponds to shifted tokens
+            mask = attention_mask[:, 1:].float()
+            # Sum log-likelihoods (negative losses) over valid tokens
+            seq_lengths = mask.sum(dim=1)
+            mean_ll = -(token_losses * mask).sum(dim=1) / seq_lengths.clamp(min=1)
+        else:
+            mean_ll = -token_losses.mean(dim=1)
 
-    out = (lls * clip_mask).sum(1).cpu().numpy()
-    return out
+    return mean_ll.cpu().numpy()
 
 
 def score_evo2(evo2_model, seqs_onehot, batch_size):
@@ -282,6 +300,8 @@ def evaluate(
     use_evo2=False,
     evo2_model=None,
     evo2_batch_size=1,
+    use_dna_tags=False,
+    no_prefix=False,
 ):
     """Run the paired-control zero-shot evaluation."""
     os.makedirs(out_dir, exist_ok=True)
@@ -301,8 +321,8 @@ def evaluate(
                 seq_scores = score_evo2(evo2_model, seqs, evo2_batch_size)
                 ctrl_scores = score_evo2(evo2_model, ctrls, evo2_batch_size)
             else:
-                seq_scores = score_causal(model, tokenizer, seqs, None, None, device)
-                ctrl_scores = score_causal(model, tokenizer, ctrls, None, None, device)
+                seq_scores = score_causal(model, tokenizer, seqs, None, None, device, use_dna_tags, no_prefix)
+                ctrl_scores = score_causal(model, tokenizer, ctrls, None, None, device, use_dna_tags, no_prefix)
 
             for ind, seq_score, ctrl_score in zip(inds, seq_scores, ctrl_scores):
                 f.write(f"{ind}\t{seq_score}\t{ctrl_score}\n")
@@ -387,7 +407,8 @@ def main():
     genome_fa = str(genome_fa_path)
     elements_tsv = str(elements_tsv_path)
 
-    model_short = args.model.split("/")[-1]
+    # Use --model_name if provided, otherwise fall back to last component of path
+    model_short = args.model_name if args.model_name else args.model.split("/")[-1]
     out_dir = args.output_dir or str(
         dart_work_dir
         / "task_1_ccre"
@@ -432,10 +453,12 @@ def main():
         dtype = torch.bfloat16 if args.bf16 else torch.float32
         print(f"Loading model ({dtype}) ...")
         tokenizer = AutoTokenizer.from_pretrained(
-            args.model, trust_remote_code=True, padding_side="right"
+            args.model, revision=args.revision, trust_remote_code=True, padding_side="right"
         )
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
         model = AutoModelForCausalLM.from_pretrained(
-            args.model, trust_remote_code=True, torch_dtype=dtype
+            args.model, revision=args.revision, trust_remote_code=True, torch_dtype=dtype
         ).to(device)
         model.eval()
 
@@ -449,6 +472,8 @@ def main():
         use_evo2=args.use_evo2,
         evo2_model=evo2_model,
         evo2_batch_size=args.batch_size,
+        use_dna_tags=args.use_dna_tags,
+        no_prefix=args.no_prefix,
     )
 
     print("\n" + "=" * 80)
