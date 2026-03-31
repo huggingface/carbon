@@ -56,7 +56,7 @@ python evaluation/sequence_recovery_eval.py \
   --hub_repo_id hf-carbon/seq-recovery-results
 ```
 
-### ClinVar VEP (post-training)
+### ClinVar VEP 
 ClinVar VEP evaluates variant effect prediction by scoring **ref vs alt alleles** in long genomic context and reporting **AUROC/AUPRC**.
 
 CLI:
@@ -75,9 +75,9 @@ SLURM:
 sbatch --export=MODEL=/path/to/carbon/model-or-hub-repo,REVISION=checkpoint-10000,CONTEXT_LEN=96000 evaluation/clinvar_vep_eval.slurm
 ```
 
-### CDS half-shuffle discrimination (post-training)
+### CDS half-shuffle discrimination 
 This task evaluates whether a model assigns higher likelihood to **real CDS sequences** vs **half-shuffled negatives** (first half fixed, second half shuffled). The dataset lives at `hf-carbon/carbon_tasks` and uses fixed column names (`original_sequence`, `input`).
-For the current dataset, `original_sequence` is the real CDS and `input` is the half-shuffled control.
+For the current dataset, `original_sequence` is the real CDS and `input` is the half-shuffled control. For updated scripts check `slurm` this task file is used for both TATA and synonymous codons evals from https://huggingface.co/datasets/hf-carbon/test_datasets. 
 
 CLI:
 ```
@@ -102,7 +102,8 @@ SLURM:
 sbatch --export=MODEL=/path/to/carbon/model-or-hub-repo,REVISION=checkpoint-10000 evaluation/cds_half_shuffle_eval.slurm
 ```
 
-### DART-Eval Task 1: Prioritizing Known Regulatory Elements (post-training)
+### DART-Eval Task 1: Prioritizing Known Regulatory Elements 
+Note: This task is saturated and noisy so not used at the moment.
 Zero-shot likelihood evaluation from [DART-Eval](https://github.com/kundajelab/DART-Eval). Compares model log-likelihoods on real ENCODE cCRE elements vs dinucleotide-shuffled controls, reporting accuracy and Wilcoxon signed-rank test. Data is auto-downloaded from [hf-carbon/dart-eval-task1](https://huggingface.co/datasets/hf-carbon/dart-eval-task1) (private).
 
 Extra dependencies: `pip install pyfaidx polars`
