@@ -261,9 +261,11 @@ LAB_BENCH_CLONINGSCENARIOS_TASKS = [
     for formulation in all_qa_formulations
 ]
 
+BASIC_DNA_SUBSETS = ["v1", "v2"]
+
 BASIC_DNA_TASKS = [
     LightevalTaskConfig(
-        name=f"basic_dna_{formulation.name.lower()}",
+        name=f"basic_dna_{formulation.name.lower()}:{subset}",
         prompt_function=get_mcq_prompt_function(
             Language.ENGLISH,
             lambda line: {
@@ -274,11 +276,12 @@ BASIC_DNA_TASKS = [
             formulation=formulation,
         ),
         hf_repo="hf-carbon/basic-dna",
-        hf_subset="default",
+        hf_subset=subset,
         evaluation_splits=("train",),
         few_shots_split="train",
         metrics=get_metrics_for_formulation(formulation, qa_metrics),
     )
+    for subset in BASIC_DNA_SUBSETS
     for formulation in all_qa_formulations
 ]
 
