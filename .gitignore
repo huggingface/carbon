@@ -213,3 +213,6 @@ results/
 details/
 data/
 logs/
+
+# Agents
+.claude/

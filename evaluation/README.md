@@ -4,22 +4,16 @@ Scripts to eval all the things.
 
 ## Setup
 
-First create the virtual env:
+Create the environment and install dependencies with Python 3.12:
 
 ```sh
-uv venv --python 3.12
-```
-
-Then install the remaining dependencies:
-
-```sh
-uv sync
+uv sync --python 3.12
 ```
 
 Some evals require Evo2 support and can be installed as follows:
 
 ```sh
-uv sync --extra evo2
+uv sync --python 3.12 --extra evo2
 ```
 
 ## Pure DNA models

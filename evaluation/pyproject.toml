@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "carbon-evals"
 version = "0.0.0"
 description = "Dependencies for Carbon evaluation scripts"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.13"
 readme = "README.md"
 dependencies = [
   "accelerate",
@@ -19,10 +19,12 @@ dependencies = [
   "pyarrow",
   "pyfaidx",
   "pyro-ppl",
+  "ray", # Needed for lighteval vllm backend
   "scikit-learn",
   "scipy",
   "torch==2.10.0+cu129; platform_system == 'Linux' and platform_machine == 'x86_64'",
-  "vllm==0.17.1",
+  "transformers==5.4.0",
+  "vllm",
   "google-genai>=1.56.0",
   "matplotlib"
 ]
@@ -36,10 +38,17 @@ evo2 = [
 [tool.setuptools]
 packages = []
 
+[tool.uv]
+override-dependencies = ["transformers==5.4.0"]
+environments = [
+  "sys_platform == 'linux' and platform_machine == 'x86_64' and python_full_version >= '3.12' and python_full_version < '3.13'",
+]
+
 [tool.uv.sources]
 torch = [
   { index = "pytorch-cu129", marker = "platform_system == 'Linux' and platform_machine == 'x86_64'" },
 ]
+vllm = { url = "https://wheels.vllm.ai/5ce2d10e4a6954802f482add02b04e23e737ad27/vllm-0.17.2rc1.dev79%2Bg5ce2d10e4-cp38-abi3-manylinux_2_31_x86_64.whl" }
 
 [[tool.uv.index]]
 name = "pytorch-cu129"
