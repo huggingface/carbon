@@ -130,7 +130,7 @@ SUBSETS = {
         "base_input":  BASE_INPUT_REGEX,
         "base_output": BASE_OUTPUT_REGEX,
         "tasks":       4,
-        "time":        "02:00:00",
+        "time":        "06:00:00",
     },
     "regex_fineweb": {
         "name":        "fineweb_regex_snowflake_filtered_20260303",
@@ -176,12 +176,16 @@ class CoordEnrichmentStep(BaseFilter):
         Import is done here (not at module level) so that the pickled pipeline
         resolves fetcher.py correctly on the worker node at runtime regardless
         of the worker's working directory.
+
+        NOTE: os/sys must be imported locally here.  When the pipeline is
+        pickled and re-loaded by launch_pickled_pipeline the class __module__
+        is '__main__' (the launcher), so module-level globals from
+        enrich_pipeline.py (including 'os') are not in scope.
         """
         if self._fetcher is None:
+            import os as _os
             import sys as _sys
-            # Resolve this file's directory; fall back to absolute path when
-            # __file__ is not available (e.g. in pickled worker contexts).
-            _coord_dir = os.path.dirname(os.path.abspath(__file__))
+            _coord_dir = '/fsx/dana_aubakirova/carbon_project/carbon/data/coord-enrichment'
             if _coord_dir not in _sys.path:
                 _sys.path.insert(0, _coord_dir)
             from fetcher import CoordFetcher

@@ -24,14 +24,14 @@ chr3:1395000-1400000 [gene=CNTN6 (protein_coding) | strand=+ | seq=TTAACTAAATCAA
 | pubmed | snowflake | 15 | 15 (100.0%) | 34 | 17 (50.0%) | 4 |
 | biorxiv | regex | 683 | 630 (92.2%) | 3,271 | 1,544 (47.2%) | 657 |
 | biostars | regex | 159 | 153 (96.2%) | 903 | 431 (47.7%) | 149 |
-| finepdfs | regex | 2,087 | 1,936 (92.8%) | 56,380 | 25,235 (44.8%) | 8,116 |
+| finepdfs | regex | 2,935 | 2,725 (92.8%) | 41,941 | 29,102 (69.4%) | 11,133 |
 | fineweb | regex | 532 | 499 (93.8%) | 2,540 | 1,229 (48.4%) | 140 |
 | pubmed | regex | 4,234 | 4,047 (95.6%) | 42,752 | 20,432 (47.8%) | 7,234 |
-| **TOTAL** | | **14,367** | **13,338 (92.8%)** | **137,631** | **63,759 (46.3%)** | **~19,000+** |
+| **TOTAL** | | **15,215** | **14,127 (92.8%)** | **123,192** | **67,626 (54.9%)** | **~22,000+** |
 
 ## Notes
 
-- **~46% annotation rate** on coordinates is expected — roughly half of genomic coordinates fall in intergenic regions with no overlapping gene returned by Ensembl.
+- **~47% annotation rate** on coordinates is typical — roughly half of genomic coordinates fall in intergenic regions with no overlapping gene returned by Ensembl. `finepdfs` regex is an exception at ~69%, likely because PDF papers tend to cite specific well-characterised gene loci.
 - **92.8% doc coverage** — nearly every document that passed the coordinate filter received at least one annotation.
 - **regex finepdfs** and **regex pubmed** dominate by volume, contributing ~99k of the 137k total coordinate references.
 - `biostars` has the highest hit rate among source datasets (~1.6–4.5%) as it is a genomics Q&A forum where users frequently paste raw coordinates.
