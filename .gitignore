@@ -205,14 +205,5 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
-
-# Evaluation outputs
-eval_results/
-scratch/
-results/
-details/
-data/
-logs/
-
-# Agents
-.claude/
+# Training data files (too large for GitHub)
+data-retrieval/classifier-finetuning/training_data/*.jsonl
