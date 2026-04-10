@@ -60,18 +60,6 @@ normalize_task_suffix() {
   printf '%s\n' "$task_suffix"
 }
 
-infer_reasoning_parser() {
-  local model_name="$1"
-  case "$model_name" in
-    Qwen3*|Qwen3.*|QwQ*|QwQ-*)
-      printf '%s\n' "qwen3"
-      ;;
-    *)
-      printf '%s\n' ""
-      ;;
-  esac
-}
-
 is_hf_repo_id() {
   local model="$1"
   case "$model" in
@@ -170,11 +158,10 @@ TASK_SUFFIX="lab_bench_seqqa"
 TP=2
 DP=1
 REASONING_PARSER=""
-REASONING_PARSER_EXPLICIT=0
 RESULTS_ORG="hf-carbon"
 LOG_DIR=""
-DEFAULT_MAX_CONNECTIONS=64
-DEFAULT_MAX_SAMPLES=64
+DEFAULT_MAX_CONNECTIONS=128
+DEFAULT_MAX_SAMPLES=128
 EXTRA_ARGS=()
 
 while [[ $# -gt 0 ]]; do
@@ -207,7 +194,6 @@ while [[ $# -gt 0 ]]; do
     --reasoning-parser)
       require_value "$1" "${2:-}"
       REASONING_PARSER="$2"
-      REASONING_PARSER_EXPLICIT=1
       shift 2
       ;;
     --results-org)
@@ -268,16 +254,12 @@ else
   MODEL_NAME="$(resolve_local_basename "$MODEL")"
 fi
 
-if (( ! REASONING_PARSER_EXPLICIT )); then
-  REASONING_PARSER="$(infer_reasoning_parser "$MODEL_NAME")"
-fi
-
 MODEL_ORG_SLUG="$(slugify "$MODEL_ORG")"
 MODEL_NAME_SLUG="$(slugify "$MODEL_NAME")"
 MODEL_REVISION_SLUG="$(slugify "$MODEL_REVISION")"
 SPACE_NAME="inspect-logs_${MODEL_ORG_SLUG}_${MODEL_NAME_SLUG}_${MODEL_REVISION_SLUG}"
 MODEL_SHA=""
-JOB_NAME="carbon-eval-${MODEL_NAME_SLUG}"
+JOB_NAME="carbon-eval_${MODEL_NAME_SLUG}_${TASK_SUFFIX}"
 
 if [[ -n "${SLURM_JOB_ID:-}" ]] && command -v scontrol >/dev/null 2>&1; then
   if ! scontrol update JobId="${SLURM_JOB_ID}" JobName="${JOB_NAME}" >/dev/null; then
@@ -366,6 +348,7 @@ INSPECT_CMD=(
   --max-connections "${DEFAULT_MAX_CONNECTIONS}"
   --max-samples "${DEFAULT_MAX_SAMPLES}"
   --log-dir "${LOG_DIR}"
+  --log-level info
   --display plain
 )
 

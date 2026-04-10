@@ -19,12 +19,13 @@ set -euo pipefail
 usage() {
   cat <<'USAGE'
 Usage:
-  sbatch evaluation/launch_inspect_api.slurm --model PROVIDER/MODEL [--task TASK_SUFFIX]
+  sbatch evaluation/launch_inspect_api.slurm --model PROVIDER/MODEL [--task TASK1 TASK2 ...]
     [--reasoning-effort LEVEL] [--results-org ORG] [--log-dir DIR]
     [-- ...extra inspect args]
 
 Examples:
   sbatch evaluation/launch_inspect_api.slurm --model openai/gpt-5.4 --task lab_bench_seqqa --reasoning-effort high
+  sbatch evaluation/launch_inspect_api.slurm --model openai/gpt-5.4 --task lab_bench_litqa lab_bench_suppqa lab_bench_figqa
   sbatch evaluation/launch_inspect_api.slurm --model openai/gpt-5.4 -- --max-samples 128
 USAGE
 }
@@ -104,7 +105,7 @@ strip_option_from_inspect_cmd() {
 }
 
 MODEL=""
-TASK_SUFFIX="lab_bench_seqqa"
+TASK_SUFFIXES=()
 REASONING_EFFORT=""
 RESULTS_ORG="hf-carbon"
 LOG_DIR=""
@@ -121,8 +122,11 @@ while [[ $# -gt 0 ]]; do
       ;;
     --task|--tasks)
       require_value "$1" "${2:-}"
-      TASK_SUFFIX="$2"
-      shift 2
+      shift
+      while [[ $# -gt 0 && "$1" != --* ]]; do
+        TASK_SUFFIXES+=("$1")
+        shift
+      done
       ;;
     --reasoning-effort)
       require_value "$1" "${2:-}"
@@ -167,12 +171,19 @@ if [[ "$MODEL" != */* ]]; then
   exit 1
 fi
 
-TASK_SUFFIX="$(normalize_task_suffix "$TASK_SUFFIX")"
-if [[ -z "$TASK_SUFFIX" ]]; then
-  echo "--task must not be empty." >&2
-  exit 1
+if (( ${#TASK_SUFFIXES[@]} == 0 )); then
+  TASK_SUFFIXES=("lab_bench_seqqa")
 fi
-TASK_PATH="inspect_evals/${TASK_SUFFIX}"
+
+TASK_PATHS=()
+for i in "${!TASK_SUFFIXES[@]}"; do
+  TASK_SUFFIXES[$i]="$(normalize_task_suffix "${TASK_SUFFIXES[$i]}")"
+  if [[ -z "${TASK_SUFFIXES[$i]}" ]]; then
+    echo "--task must not be empty." >&2
+    exit 1
+  fi
+  TASK_PATHS+=("inspect_evals/${TASK_SUFFIXES[$i]}")
+done
 
 MODEL_PROVIDER="${MODEL%%/*}"
 MODEL_NAME="${MODEL#*/}"
@@ -230,32 +241,37 @@ if [[ -n "$REASONING_EFFORT" ]]; then
   METADATA_ARGS+=(--metadata "reasoning_effort=${REASONING_EFFORT}")
 fi
 
-INSPECT_CMD=(
-  uv run --project "${REPO_ROOT}/evaluation" inspect eval "${TASK_PATH}"
-  --model "${MODEL}"
-  "${METADATA_ARGS[@]}"
-  --max-connections "${DEFAULT_MAX_CONNECTIONS}"
-  --max-samples "${DEFAULT_MAX_SAMPLES}"
-  --no-fail-on-error
-  --log-dir "${LOG_DIR}"
-  --display plain
-)
+for TASK_PATH in "${TASK_PATHS[@]}"; do
+  INSPECT_CMD=(
+    uv run --project "${REPO_ROOT}/evaluation" inspect eval "${TASK_PATH}"
+    --model "${MODEL}"
+    "${METADATA_ARGS[@]}"
+    --max-connections "${DEFAULT_MAX_CONNECTIONS}"
+    --max-samples "${DEFAULT_MAX_SAMPLES}"
+    --no-fail-on-error
+    --log-dir "${LOG_DIR}"
+    --display plain
+  )
 
-if [[ -n "$REASONING_EFFORT" ]]; then
-  INSPECT_CMD+=(--reasoning-effort "${REASONING_EFFORT}")
-fi
+  if [[ -n "$REASONING_EFFORT" ]]; then
+    INSPECT_CMD+=(--reasoning-effort "${REASONING_EFFORT}")
+  fi
 
-if has_option_arg --max-connections "${EXTRA_ARGS[@]}"; then
-  strip_option_from_inspect_cmd --max-connections
-fi
+  if has_option_arg --max-connections "${EXTRA_ARGS[@]}"; then
+    strip_option_from_inspect_cmd --max-connections
+  fi
 
-if has_option_arg --max-samples "${EXTRA_ARGS[@]}"; then
-  strip_option_from_inspect_cmd --max-samples
-fi
+  if has_option_arg --max-samples "${EXTRA_ARGS[@]}"; then
+    strip_option_from_inspect_cmd --max-samples
+  fi
 
-if (( ${#EXTRA_ARGS[@]} > 0 )); then
-  INSPECT_CMD+=("${EXTRA_ARGS[@]}")
-fi
+  if (( ${#EXTRA_ARGS[@]} > 0 )); then
+    INSPECT_CMD+=("${EXTRA_ARGS[@]}")
+  fi
+
+  print_command "Running eval" "${INSPECT_CMD[@]}"
+  "${INSPECT_CMD[@]}"
+done
 
 BUNDLE_CMD=(
   uv run --project "${REPO_ROOT}/evaluation" inspect view bundle
@@ -263,9 +279,6 @@ BUNDLE_CMD=(
   --output-dir "hf/${RESULTS_ORG}/${SPACE_NAME}"
   --overwrite
 )
-
-print_command "Running eval" "${INSPECT_CMD[@]}"
-"${INSPECT_CMD[@]}"
 
 print_command "Pushing viewer" "${BUNDLE_CMD[@]}"
 "${BUNDLE_CMD[@]}"

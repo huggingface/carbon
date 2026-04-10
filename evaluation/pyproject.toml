@@ -26,7 +26,8 @@ dependencies = [
   "transformers==5.4.0",
   "vllm",
   "google-genai>=1.56.0",
-  "matplotlib"
+  "matplotlib",
+  "biopython>=1.83",
 ]
 
 [project.optional-dependencies]

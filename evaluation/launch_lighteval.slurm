@@ -115,7 +115,7 @@ fi
 
 cd "$REPO_ROOT"
 
-uv run --project "${REPO_ROOT}/evaluation" lighteval vllm \
+uv run --project "${REPO_ROOT}/evaluation" --no-sync lighteval vllm \
   "$MODEL_CONFIG" \
   "$TASK" \
   --custom-tasks evaluation/lighteval_tasks/tasks.py \

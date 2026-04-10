@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "carbon-data"
+version = "0.0.0"
+description = "Dependencies for Carbon data generation scripts"
+requires-python = ">=3.12,<3.13"
+readme = "README.md"
+dependencies = [
+  "biopython>=1.83",
+  "datasets>=4.1.1",
+  "pandas<3",
+  "tqdm>=4.67.3",
+]
+
+[tool.setuptools]
+packages = []
+
+[dependency-groups]
+dev = [
+    "ruff>=0.15.7",
+]
