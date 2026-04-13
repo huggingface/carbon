@@ -57,19 +57,6 @@ def build_ngram_single(document: str, ngram_size: int = 8) -> set[str]:
     return set(ngrams)
 
 
-def extract_row_text(row: dict[str, object], text_column: str) -> str:
-    """Return the row text used for contamination checks."""
-    if text_column in {"messages", "chosen"}:
-        conversation = row.get(text_column)
-        if not isinstance(conversation, list):
-            return ""
-        for message in conversation:
-            if isinstance(message, dict) and message.get("role") == "user":
-                return str(message.get("content") or "")
-        return ""
-    return str(row.get(text_column) or "")
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", type=str, required=True, help="Name of the dataset to check for contamination.")
@@ -77,7 +64,7 @@ if __name__ == "__main__":
     parser.add_argument("--ngram_size", type=int, default=8, help="Size of n-grams to build, defaults to 8.")
     parser.add_argument("--split", type=str, default="train", help="the split")
     parser.add_argument(
-        "--text_column", type=str, default="question", help="Name of the column containing the text to check."
+        "--text_column", type=str, default="text", help="Name of the column containing the text to check."
     )
     parser.add_argument("--num_proc", type=int, default=8, help="Number of processes to use.")
     parser.add_argument(
@@ -98,10 +85,18 @@ if __name__ == "__main__":
     for eval_name, ngram_lookup in ngram_lookups.items():
         # Update the ngram_lookup variable for each dataset
         def find_contaminated(row, eval_name=eval_name, ngram_lookup=ngram_lookup):
-            text = extract_row_text(row, args.text_column)
-            if not text:
-                row[f"contaminated_{eval_name}"] = False
-                return row
+            if args.text_column == "messages":
+                for message in row["messages"]:
+                    if message["role"] == "user":
+                        text = message["content"]
+                        break
+            elif args.text_column == "chosen":
+                for message in row["chosen"]:
+                    if message["role"] == "user":
+                        text = message["content"]
+                        break
+            else:
+                text = row[args.text_column]
 
             # For each example we have to build the ngrams and check for all of them on each row
             ngrams = build_ngram_single(text, ngram_size=args.ngram_size)

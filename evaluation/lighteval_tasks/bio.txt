@@ -3,6 +3,7 @@ gpqa_biology_mcq_mcf
 hle_gold_bio_mcf
 lab_bench_cloningscenarios_mcf
 lab_bench_seqqa_mcf
+lab_bench_seqqa_difficulty_mcf
 mmlu_mcf:college_biology
 mmlu_mcf:high_school_biology
 mmlu_mcf:medical_genetics

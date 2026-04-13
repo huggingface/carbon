@@ -209,6 +209,7 @@ LONG_AMPLICON_SEQUENCE_MAX_LEN = 25000
 LONG_AMPLICON_SEQUENCE_FLANK_LEN = 40
 LONG_ORF_SEQUENCE_WINDOW_MIN_LEN = 1200
 LONG_ORF_SEQUENCE_WINDOW_MAX_LEN = 50000
+STOP_CODONS = {"TAA", "TAG", "TGA"}
 
 _rb = RestrictionBatch(TRAINING_CLONING_ENZYME_NAMES)
 CLONING_ENZYMES: dict[str, Any] = {}
@@ -548,12 +549,12 @@ def _pick_public_vector_sequence(row: dict[str, object]) -> str | None:
 
 
 def cut_positions(seq: str, enzyme_names: list[str]) -> list[int]:
-    """Return unique cut positions for the named enzymes."""
+    """Return unique 0-based cut positions for the named enzymes."""
     rb = RestrictionBatch(enzyme_names)
     result = rb.search(Seq(seq))
     cuts: set[int] = set()
     for positions in result.values():
-        cuts.update(positions)
+        cuts.update(position - 1 for position in positions)
     return sorted(cuts)
 
 
@@ -581,44 +582,65 @@ def digest(seq: str, enzyme_names: list[str]) -> list[int]:
     return fragments
 
 
-def find_orfs(seq: str, min_aa: int = 0) -> list[dict[str, object]]:
-    """Find ORFs in all six frames."""
+def find_orfs(
+    seq: str,
+    min_aa: int = 0,
+    require_stop: bool = True,
+) -> list[dict[str, object]]:
+    """Find ATG-started ORFs in all six frames."""
     orfs: list[dict[str, object]] = []
     for strand, nucleotide_sequence in (
         ("+", seq),
         ("-", str(Seq(seq).reverse_complement())),
     ):
         for frame in range(3):
-            index = frame
-            while index + 2 < len(nucleotide_sequence):
-                codon = nucleotide_sequence[index : index + 3]
-                if codon != "ATG":
-                    index += 3
+            for start in range(frame, len(nucleotide_sequence) - 2, 3):
+                if nucleotide_sequence[start : start + 3] != "ATG":
                     continue
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    protein = str(Seq(nucleotide_sequence[index:]).translate(to_stop=True))
+
+                stop_end: int | None = None
+                for stop_index in range(start + 3, len(nucleotide_sequence) - 2, 3):
+                    if nucleotide_sequence[stop_index : stop_index + 3] in STOP_CODONS:
+                        stop_end = stop_index + 3
+                        break
+
+                if stop_end is None:
+                    if require_stop:
+                        continue
+                    coding_end = len(nucleotide_sequence) - ((len(nucleotide_sequence) - start) % 3)
+                else:
+                    coding_end = stop_end - 3
+
+                protein = str(Seq(nucleotide_sequence[start:coding_end]).translate())
                 if len(protein) >= min_aa:
                     orfs.append(
                         {
-                            "start": index,
-                            "end": index + len(protein) * 3 + 3,
+                            "start": start,
+                            "end": stop_end if stop_end is not None else coding_end,
                             "strand": strand,
                             "frame": frame,
                             "aa_seq": protein,
                             "length_aa": len(protein),
+                            "has_stop": stop_end is not None,
                         }
                     )
-                index += len(protein) * 3 + 3
     return orfs
 
 
-def longest_orf(seq: str) -> dict[str, object] | None:
+def longest_orf(
+    seq: str,
+    require_stop: bool = True,
+    require_unique: bool = True,
+) -> dict[str, object] | None:
     """Return the longest ORF, if any."""
-    orfs = find_orfs(seq, min_aa=1)
+    orfs = find_orfs(seq, min_aa=1, require_stop=require_stop)
     if not orfs:
         return None
-    return max(orfs, key=lambda row: row["length_aa"])
+    max_len = max(int(orf["length_aa"]) for orf in orfs)
+    longest = [orf for orf in orfs if int(orf["length_aa"]) == max_len]
+    if require_unique and len(longest) != 1:
+        return None
+    return longest[0]
 
 
 def extract_orf_dna(seq: str, orf: dict[str, object]) -> str:
@@ -846,7 +868,7 @@ def circular_flanks(
     positions = cut_positions(vector_sequence, [enzyme_name])
     if len(positions) != 1:
         return None
-    cut_index = positions[0] - 1
+    cut_index = positions[0]
     left = "".join(
         vector_sequence[(cut_index - flank_len + offset) % len(vector_sequence)]
         for offset in range(flank_len)
@@ -1045,12 +1067,13 @@ def find_random_amplicon_candidate(
     return None
 
 
-def count_orfs_strictly_over_threshold(seq: str, threshold: int) -> int:
+def count_orfs_strictly_over_threshold(
+    seq: str,
+    threshold: int,
+    require_stop: bool = True,
+) -> int:
     """Count ORFs whose translated length is strictly greater than *threshold*."""
-    return sum(
-        int(orf["length_aa"]) > threshold
-        for orf in find_orfs(seq, min_aa=threshold)
-    )
+    return len(find_orfs(seq, min_aa=threshold + 1, require_stop=require_stop))
 
 
 def count_upstream_aug_codons(leader_rna: str) -> int:
@@ -1218,7 +1241,8 @@ def generate_orf_aa_position(n: int, seed: int) -> list[dict[str, object]]:
         question = (
             f"What amino acid is encoded at position {position} in the protein "
             f"translated from the longest open reading frame (considering all six "
-            f"reading frames on both strands) of the following sequence?\n"
+            f"reading frames on both strands) of the following sequence? An ORF "
+            f"starts at ATG and ends at the first in-frame stop codon.\n"
             f"Sequence: {seq}"
         )
         examples.append(
@@ -1234,7 +1258,9 @@ def generate_orf_aa_position(n: int, seed: int) -> list[dict[str, object]]:
                     "sequence": seq,
                     "position": position,
                     "strands": "both",
-                    "longest_orf_tie_break": "longest_aa",
+                    "orf_definition": "atg_to_first_in_frame_stop",
+                    "require_stop": True,
+                    "longest_orf_requirement": "unique_longest_aa",
                 },
             )
         )
@@ -1273,7 +1299,8 @@ def generate_orf_aa_sequence(
         aa_seq = str(orf["aa_seq"])
         question = (
             f"Translate the longest open reading frame (considering all six reading "
-            f"frames on both strands) in the following DNA sequence.\n"
+            f"frames on both strands) in the following DNA sequence. An ORF starts "
+            f"at ATG and ends at the first in-frame stop codon.\n"
             f"Sequence: {seq}"
         )
         examples.append(
@@ -1288,7 +1315,9 @@ def generate_orf_aa_sequence(
                 validator_params={
                     "sequence": seq,
                     "strands": "both",
-                    "longest_orf_tie_break": "longest_aa",
+                    "orf_definition": "atg_to_first_in_frame_stop",
+                    "require_stop": True,
+                    "longest_orf_requirement": "unique_longest_aa",
                 },
             )
         )
@@ -1314,7 +1343,8 @@ def generate_orf_count_over_threshold(
         question = (
             f"How many open reading frames (considering all six reading frames on both "
             f"strands) in the following sequence encode proteins longer than {threshold} "
-            f"amino acids?\n"
+            f"amino acids? An ORF starts at ATG and ends at the first in-frame stop "
+            f"codon.\n"
             f"Sequence: {seq}"
         )
         examples.append(
@@ -1330,6 +1360,8 @@ def generate_orf_count_over_threshold(
                     "sequence": seq,
                     "threshold": threshold,
                     "strands": "both",
+                    "orf_definition": "atg_to_first_in_frame_stop",
+                    "require_stop": True,
                 },
             )
         )
@@ -1814,8 +1846,8 @@ def generate_vector_insert_compatibility(
         question = (
             f"Vector {vector['name']} (backbone: {vector['backbone']}) has single-cut "
             f"sites for {single_cut_summary}. Which pair of these enzymes can be used "
-            f"for directional cloning while leaving the insert intact? Report the "
-            f"alphabetically first valid pair.\n"
+            f"to cut the vector at two unique sites while leaving the insert intact? "
+            f"Report the alphabetically first valid pair.\n"
             f"Insert sequence: {insert['sequence']}"
         )
         correct_answer = ", ".join(correct_pair)

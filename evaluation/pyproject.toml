@@ -12,7 +12,7 @@ dependencies = [
   "accelerate",
   "datasets",
   "inspect-evals",
-  "lighteval @ git+https://github.com/huggingface/lighteval.git@33acf35f02c41d234c7df5cbdf1fd3e9d33ecd76",
+  "lighteval @ git+https://github.com/huggingface/lighteval.git@34889df34655caac4e0092ed040f2bd4af837447",
   "more-itertools", # Needed for lighteval
   "pandas",
   "polars",
@@ -23,8 +23,8 @@ dependencies = [
   "scikit-learn",
   "scipy",
   "torch==2.10.0+cu129; platform_system == 'Linux' and platform_machine == 'x86_64'",
-  "transformers==5.4.0",
-  "vllm",
+  "transformers>=5.5.3",
+  "vllm>=0.19.0",
   "google-genai>=1.56.0",
   "matplotlib",
   "biopython>=1.83",
@@ -40,7 +40,8 @@ evo2 = [
 packages = []
 
 [tool.uv]
-override-dependencies = ["transformers==5.4.0"]
+# vLLM 0.19.0 still constrains transformers to <5, but the eval stack targets Transformers 5.x.
+override-dependencies = ["transformers>=5.5.3"]
 environments = [
   "sys_platform == 'linux' and platform_machine == 'x86_64' and python_full_version >= '3.12' and python_full_version < '3.13'",
 ]
@@ -49,7 +50,6 @@ environments = [
 torch = [
   { index = "pytorch-cu129", marker = "platform_system == 'Linux' and platform_machine == 'x86_64'" },
 ]
-vllm = { url = "https://wheels.vllm.ai/5ce2d10e4a6954802f482add02b04e23e737ad27/vllm-0.17.2rc1.dev79%2Bg5ce2d10e4-cp38-abi3-manylinux_2_31_x86_64.whl" }
 
 [[tool.uv.index]]
 name = "pytorch-cu129"

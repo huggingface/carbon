@@ -322,6 +322,16 @@ CANONICALIZERS = {
 # ---------------------------------------------------------------------------
 
 
+def _require_stop(params: dict[str, Any]) -> bool:
+    """Return whether ORF recomputation should require a terminal stop codon."""
+    return bool(params.get("require_stop", True))
+
+
+def _require_unique_longest_orf(params: dict[str, Any]) -> bool:
+    """Return whether longest-ORF tasks require a unique maximum-length ORF."""
+    return params.get("longest_orf_requirement", "unique_longest_aa") == "unique_longest_aa"
+
+
 def _recompute_from_params(subtask: str, params: dict[str, Any]) -> str:
     """Recompute the expected answer from validator_params metadata."""
     if subtask == "seq_gc_pct":
@@ -346,7 +356,11 @@ def _recompute_from_params(subtask: str, params: dict[str, Any]) -> str:
         return ", ".join(str(length) for length in fragments)
 
     if subtask == "orf_aa_position":
-        orf = generate_data.longest_orf(params["sequence"])
+        orf = generate_data.longest_orf(
+            params["sequence"],
+            require_stop=_require_stop(params),
+            require_unique=_require_unique_longest_orf(params),
+        )
         if orf is None:
             raise ValueError("No ORF found when recomputing amino-acid position.")
         aa_seq = str(orf["aa_seq"])
@@ -356,7 +370,11 @@ def _recompute_from_params(subtask: str, params: dict[str, Any]) -> str:
         return generate_data.AA_ONE_TO_THREE[aa_seq[position - 1]]
 
     if subtask == "orf_aa_sequence":
-        orf = generate_data.longest_orf(params["sequence"])
+        orf = generate_data.longest_orf(
+            params["sequence"],
+            require_stop=_require_stop(params),
+            require_unique=_require_unique_longest_orf(params),
+        )
         if orf is None:
             raise ValueError("No ORF found when recomputing amino-acid sequence.")
         return str(orf["aa_seq"])
@@ -364,7 +382,9 @@ def _recompute_from_params(subtask: str, params: dict[str, Any]) -> str:
     if subtask == "orf_count_over_threshold":
         return str(
             generate_data.count_orfs_strictly_over_threshold(
-                params["sequence"], int(params["threshold"])
+                params["sequence"],
+                int(params["threshold"]),
+                require_stop=_require_stop(params),
             )
         )
 
