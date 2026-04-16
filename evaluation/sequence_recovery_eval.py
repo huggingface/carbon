@@ -121,6 +121,12 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Override model name for output file naming. If not provided, uses the last component of --model path.",
     )
+    parser.add_argument(
+        "--upcast_lm_head",
+        action="store_true",
+        help="Upcast lm_head to float32 while keeping rest in bf16. "
+             "Fixes SR degradation from bf16 rounding in the logit projection.",
+    )
     return parser.parse_args()
 
 
@@ -185,6 +191,16 @@ def process_data_shard(shard_id, sequences_data, args, dtype):
     print(f"Shard {shard_id}: Loading model on GPU {shard_id}...")
     model, tokenizer = _load_model_and_tokenizer(args.model, args.revision, dtype)
     model = model.to(device)
+
+    if getattr(args, 'upcast_lm_head', False) and hasattr(model, 'lm_head'):
+        # Wrap lm_head forward to compute in fp32 (weights stay bf16, cast on the fly)
+        import torch.nn.functional as F
+        _original_lm_head = model.lm_head
+        def _fp32_lm_head_forward(input):
+            return F.linear(input.float(), _original_lm_head.weight.float(),
+                          _original_lm_head.bias.float() if _original_lm_head.bias is not None else None)
+        model.lm_head.forward = _fp32_lm_head_forward
+        print(f"Shard {shard_id}: Wrapped lm_head forward to compute in fp32")
 
     tokenizer.padding_side = "left"
 
@@ -315,7 +331,8 @@ def process_data_evo2(sequences_data, args):
             "Evo2 library not available; install evo2 to use --use_evo2"
         ) from e
 
-    torch.cuda.set_device(0)
+    # Do NOT set_device(0) — Evo-2's inference pipeline automatically shards large models across all visible GPUs. See https://github.com/ArcInstitute/evo2/tree/main?tab=readme-ov-file#setup
+    # For multi-GPU models (20B, 40B), set CUDA_VISIBLE_DEVICES in the SLURM script.
     model_name = _evo2_model_name(args.model)
     _patch_evo2_config_no_flash(model_name)
     model = Evo2(model_name)
@@ -348,8 +365,8 @@ def process_data_evo2(sequences_data, args):
                     output = model.generate(
                         prompt_seqs=batch_prompts,
                         n_tokens=args.gen_len_bp,
-                        temperature=1.0,
-                        top_k=4,
+                        temperature=0.0,
+                        do_sample=False,
                     )
                     # Extract predictions for each sequence in batch
                     for j, (pred, hash_index) in enumerate(
@@ -363,8 +380,8 @@ def process_data_evo2(sequences_data, args):
                         output = model.generate(
                             prompt_seqs=[prompt],
                             n_tokens=args.gen_len_bp,
-                            temperature=1.0,
-                            top_k=4,
+                            temperature=0.0,
+                            do_sample=False,
                         )
                         predictions.append(
                             {"hash_index": hash_index, "pred": output.sequences[0]}
@@ -389,8 +406,8 @@ def process_data_evo2(sequences_data, args):
                         output = model.generate(
                             prompt_seqs=[prompt],
                             n_tokens=args.gen_len_bp,
-                            temperature=1.0,
-                            top_k=4,
+                            temperature=0.0,
+                            do_sample=False,
                         )
                         predictions.append(
                             {"hash_index": hash_index, "pred": output.sequences[0]}
@@ -559,13 +576,14 @@ def process_checkpoint(args: argparse.Namespace, dtype: str) -> Dict:
     # Use --model_name if provided, otherwise fall back to last component of path
     model_name = args.model_name if args.model_name else args.model.split("/")[-1]
     revision_tag = args.revision or "main"
+    upcast_suffix = "_upcast-lm-head" if getattr(args, 'upcast_lm_head', False) else ""
     test_suffix = f"_test{args.max_samples}" if args.max_samples is not None else ""
     # If model_name is already provided (e.g., "hybrid_50B_gener_24000"), use simpler naming
     if args.model_name:
-        output_basename = f"{model_name}_{dtype}{test_suffix}"
+        output_basename = f"{model_name}_{dtype}{upcast_suffix}{test_suffix}"
     else:
         output_basename = (
-            f"{model_name}_{revision_tag}_{args.data_type}_{dtype}{test_suffix}"
+            f"{model_name}_{revision_tag}_{args.data_type}_{dtype}{upcast_suffix}{test_suffix}"
         )
 
     output_path = os.path.join(args.output_dir, f"{output_basename}.parquet")
