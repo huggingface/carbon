@@ -32,10 +32,25 @@ python evaluation/sequence_recovery_eval.py \
   --bf16
 ```
 For official Evo2 weights, add `--use_evo2` (and optionally `--gen_len_bp 30`).
+For longer HF rollouts, add `--accuracy_mode prediction_length`. When the requested scored
+window exceeds the dataset's 128 bp label, the script automatically switches to a held-out
+suffix from the input `sequence`, so `--gen_len 5` preserves the legacy metric while
+larger `--gen_len` values can score longer continuations. Use `--label_source dataset` to
+disable that fallback.
 
 SLURM:
 ```
 sbatch --export=MODEL=/path/to/carbon/model-or-hub-repo,REVISION=checkpoint-10000,DATA_TYPE=eukaryote evaluation/sequence_recovery_eval.slurm
+```
+For a parallel `gen_len` sweep, use one SLURM job per `gen_len`:
+```sh
+MODEL=hf-carbon/carbon-3B-600B-dna-generv2-fp32-lmhead \
+MODEL_NAME=Carbon-3B-600B-dna-generv2-fp32-lmhead \
+USE_DNA_TAGS=true \
+GEN_LENS="5 10 20 40 80 160 320 640 1280 2560" \
+ACCURACY_MODE=prediction_length \
+BASE_OUTPUT_DIR=./eval_results/sequence_recovery_long_rollouts_pow2 \
+evaluation/submit_sequence_recovery_gen_len_sweep.sh
 ```
 
 Optional upload:

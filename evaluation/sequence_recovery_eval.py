@@ -1,3 +1,34 @@
+"""
+Usage:
+  Legacy fixed-window scoring (preserves the original --gen_len 5 metric):
+    uv run --project evaluation python evaluation/sequence_recovery_eval.py \
+      --model hf-carbon/carbon-3B-600B-dna-generv2-fp32-lmhead \
+      --model_name 3B-WITH-TAGS \
+      --data_type eukaryote \
+      --data_path hf://datasets/GenerTeam/sequence-recovery \
+      --output_dir scratch/sequence_recovery/fixed_bp \
+      --max_seq_len 6144 \
+      --gen_len 5 \
+      --gen_len_bp 30 \
+      --batch_size 64 \
+      --bf16 \
+      --use_dna_tags
+
+  Long-rollout scoring (scores the generated window and derives a tail label when needed):
+    uv run --project evaluation python evaluation/sequence_recovery_eval.py \
+      --model hf-carbon/carbon-3B-600B-dna-generv2-fp32-lmhead \
+      --model_name 3B-WITH-TAGS \
+      --data_type eukaryote \
+      --data_path hf://datasets/GenerTeam/sequence-recovery \
+      --output_dir scratch/sequence_recovery/prediction_length \
+      --max_seq_len 6144 \
+      --gen_len 512 \
+      --batch_size 64 \
+      --bf16 \
+      --use_dna_tags \
+      --accuracy_mode prediction_length
+"""
+
 import argparse
 import hashlib
 import json
@@ -99,6 +130,12 @@ def parse_args() -> argparse.Namespace:
         help="Limit number of sequences to evaluate (for testing). If None, evaluates all sequences.",
     )
     parser.add_argument(
+        "--sample_seed",
+        type=int,
+        default=0,
+        help="Random seed used when subsampling with --max_samples.",
+    )
+    parser.add_argument(
         "--use_dna_tags",
         action="store_true",
         help="Wrap DNA sequences with <dna>...</dna> tags for hybrid tokenizer models",
@@ -127,6 +164,36 @@ def parse_args() -> argparse.Namespace:
         help="Upcast lm_head to float32 while keeping rest in bf16. "
              "Fixes SR degradation from bf16 rounding in the logit projection.",
     )
+    parser.add_argument(
+        "--accuracy_mode",
+        default="fixed_bp",
+        choices=["fixed_bp", "prediction_length"],
+        help="How to score generated rollouts. "
+             "'fixed_bp' preserves the legacy 30 bp denominator, "
+             "while 'prediction_length' scores the full generated window up to the label length.",
+    )
+    parser.add_argument(
+        "--score_len_bp",
+        type=int,
+        default=30,
+        help="Base-pair denominator used by --accuracy_mode fixed_bp.",
+    )
+    parser.add_argument(
+        "--label_source",
+        default="auto",
+        choices=["auto", "dataset", "sequence_tail"],
+        help="Where evaluation labels come from. "
+             "'dataset' uses the shipped label column, "
+             "'sequence_tail' derives a held-out suffix from the input sequence, "
+             "and 'auto' keeps the dataset label unless the requested scored window exceeds it.",
+    )
+    parser.add_argument(
+        "--bp_per_token",
+        type=int,
+        default=6,
+        help="Expected bp represented by each token when inferring sequence-tail labels. "
+             "For example, a k-mer tokenizer has k base pair per token.",
+    )
     return parser.parse_args()
 
 
@@ -143,17 +210,33 @@ class SuppressSpecialTokensLogitsProcessor:
 
 
 def calculate_accuracy(
-    predictions: List[str], labels: List[str], seq_length: int = 30
-) -> List[float]:
-    accuracies = []
+    predictions: List[str],
+    labels: List[str],
+    accuracy_mode: str = "fixed_bp",
+    score_len_bp: int = 30,
+) -> List[Dict[str, float]]:
+    if accuracy_mode == "fixed_bp" and score_len_bp <= 0:
+        raise ValueError("score_len_bp must be positive when accuracy_mode='fixed_bp'")
+
+    metrics = []
     for label, pred in zip(labels, predictions):
+        if accuracy_mode == "fixed_bp":
+            scored_bp = score_len_bp
+        elif accuracy_mode == "prediction_length":
+            scored_bp = min(len(label), len(pred))
+        else:
+            raise ValueError(f"Unsupported accuracy_mode: {accuracy_mode}")
+
         same_count = sum(
             1
-            for i in range(min(len(label), len(pred), seq_length))
+            for i in range(min(len(label), len(pred), scored_bp))
             if label[i] == pred[i]
         )
-        accuracies.append(same_count / seq_length)
-    return accuracies
+
+        accuracy = same_count / scored_bp if scored_bp > 0 else 0.0
+        metrics.append({"accuracy": accuracy, "scored_bp": scored_bp})
+
+    return metrics
 
 
 def load_parquet_hf(data_path: str, data_type: str) -> pd.DataFrame:
@@ -181,6 +264,59 @@ SPECIES_TAG_MAP = {
     "protozoa": "<protozoan_species>",
     "invertebrate": "<invertebrate_species>",
 }
+
+
+def infer_requested_rollout_bp(args: argparse.Namespace) -> int:
+    if args.accuracy_mode == "fixed_bp":
+        return args.score_len_bp
+    if args.use_evo2:
+        return args.gen_len_bp
+    return args.gen_len * args.bp_per_token
+
+
+def prepare_eval_dataframe(df: pd.DataFrame, args: argparse.Namespace) -> pd.DataFrame:
+    if args.use_species_tags and "type" not in df.columns:
+        raise ValueError("--use_species_tags requires a dataset with a 'type' column")
+
+    prepared_df = df.copy()
+    prepared_df["dataset_label"] = prepared_df["label"]
+    prepared_df["dataset_label_len_bp"] = prepared_df["dataset_label"].str.len()
+    requested_rollout_bp = infer_requested_rollout_bp(args)
+
+    if requested_rollout_bp <= 0:
+        raise ValueError("Requested rollout length must be positive")
+
+    min_dataset_label_len_bp = int(prepared_df["dataset_label_len_bp"].min())
+
+    if args.label_source == "dataset":
+        use_sequence_tail = False
+    elif args.label_source == "sequence_tail":
+        use_sequence_tail = True
+    else:
+        use_sequence_tail = requested_rollout_bp > min_dataset_label_len_bp
+
+    if use_sequence_tail:
+        too_short = prepared_df["sequence"].str.len() <= requested_rollout_bp
+        if too_short.any():
+            shortest_sequence_bp = int(prepared_df["sequence"].str.len().min())
+            raise ValueError(
+                "Cannot derive sequence-tail labels because at least one input sequence "
+                f"has length {shortest_sequence_bp} bp, which is not longer than the "
+                f"requested tail label length of {requested_rollout_bp} bp"
+            )
+
+        prepared_df["prompt_sequence"] = prepared_df["sequence"].str.slice(
+            stop=-requested_rollout_bp
+        )
+        prepared_df["label"] = prepared_df["sequence"].str[-requested_rollout_bp:]
+        prepared_df["label_source"] = "sequence_tail"
+        prepared_df["label_len_bp"] = requested_rollout_bp
+    else:
+        prepared_df["prompt_sequence"] = prepared_df["sequence"]
+        prepared_df["label_source"] = "dataset"
+        prepared_df["label_len_bp"] = prepared_df["dataset_label_len_bp"]
+
+    return prepared_df
 
 
 def process_data_shard(shard_id, sequences_data, args, dtype):
@@ -215,7 +351,7 @@ def process_data_shard(shard_id, sequences_data, args, dtype):
         [SuppressSpecialTokensLogitsProcessor(special_token_ids)]
     )
 
-    sequences_shard = [item["sequence"] for item in sequences_data]
+    sequences_shard = [item["prompt_sequence"] for item in sequences_data]
     indices_shard = [item["hash_index"] for item in sequences_data]
     species_types = [item.get("type") for item in sequences_data] if args.use_species_tags else None
     total_sequences = len(sequences_shard)
@@ -337,7 +473,7 @@ def process_data_evo2(sequences_data, args):
     _patch_evo2_config_no_flash(model_name)
     model = Evo2(model_name)
 
-    sequences = [item["sequence"] for item in sequences_data]
+    sequences = [item["prompt_sequence"] for item in sequences_data]
     indices = [item["hash_index"] for item in sequences_data]
     total_sequences = len(sequences)
 
@@ -436,6 +572,7 @@ def process_checkpoint(args: argparse.Namespace, dtype: str) -> Dict:
     print(f"Data: {args.data_path}/{args.data_type}/test.parquet")
 
     df = load_parquet_hf(args.data_path, args.data_type)
+    df = prepare_eval_dataframe(df, args)
 
     # Show dataset info
     if "type" in df.columns:
@@ -443,6 +580,31 @@ def process_checkpoint(args: argparse.Namespace, dtype: str) -> Dict:
         print(f"Dataset contains {len(df)} sequences with {len(type_counts)} types:")
         for type_name, count in type_counts.items():
             print(f"  - {type_name}: {count} sequences")
+
+    sequence_lengths = df["sequence"].str.len()
+    dataset_label_lengths = df["dataset_label_len_bp"]
+    print(
+        "Sequence lengths (bp): "
+        f"min={int(sequence_lengths.min())}, "
+        f"median={int(sequence_lengths.median())}, "
+        f"max={int(sequence_lengths.max())}"
+    )
+    print(
+        "Dataset label lengths (bp): "
+        f"min={int(dataset_label_lengths.min())}, "
+        f"max={int(dataset_label_lengths.max())}"
+    )
+    active_label_source = df["label_source"].iloc[0]
+    active_label_len_bp = (
+        int(df["label_len_bp"].iloc[0])
+        if active_label_source == "sequence_tail"
+        else int(dataset_label_lengths.min())
+    )
+    print(
+        f"Evaluation label source: {active_label_source} "
+        f"(requested_rollout_bp={infer_requested_rollout_bp(args)}, "
+        f"label_len_bp={active_label_len_bp})"
+    )
 
     # Limit number of samples for testing if requested
     if args.max_samples is not None and args.max_samples > 0:
@@ -458,7 +620,7 @@ def process_checkpoint(args: argparse.Namespace, dtype: str) -> Dict:
 
             for type_name, group in df.groupby("type"):
                 sample_size = min(len(group), samples_per_type)
-                sampled = group.sample(sample_size)
+                sampled = group.sample(sample_size, random_state=args.sample_seed)
                 sampled_dfs.append(sampled)
                 sampled_indices.update(sampled.index)
 
@@ -470,7 +632,10 @@ def process_checkpoint(args: argparse.Namespace, dtype: str) -> Dict:
                 # Get remaining rows from original dataframe (exclude already sampled)
                 remaining_df = original_df[~original_df.index.isin(sampled_indices)]
                 if len(remaining_df) > 0:
-                    additional = remaining_df.sample(min(remaining, len(remaining_df)))
+                    additional = remaining_df.sample(
+                        min(remaining, len(remaining_df)),
+                        random_state=args.sample_seed,
+                    )
                     sampled_df = pd.concat([sampled_df, additional]).reset_index(
                         drop=True
                     )
@@ -478,7 +643,10 @@ def process_checkpoint(args: argparse.Namespace, dtype: str) -> Dict:
             df = sampled_df.head(args.max_samples).copy()
         else:
             # No type column or only one type, use random sampling
-            df = df.sample(min(args.max_samples, len(df))).reset_index(drop=True)
+            df = df.sample(
+                min(args.max_samples, len(df)),
+                random_state=args.sample_seed,
+            ).reset_index(drop=True)
 
         print(f"⚠️  TEST MODE: Limited to {len(df)} samples (from {original_len} total)")
         if "type" in df.columns:
@@ -508,7 +676,7 @@ def process_checkpoint(args: argparse.Namespace, dtype: str) -> Dict:
         end_idx = min((i + 1) * shard_size, total_sequences)
         if start_idx < total_sequences:
             shard_df = df.iloc[start_idx:end_idx].copy()
-            shard_cols = ["sequence", "hash_index"]
+            shard_cols = ["prompt_sequence", "hash_index"]
             if args.use_species_tags and "type" in shard_df.columns:
                 shard_cols.append("type")
             shards.append(
@@ -523,7 +691,7 @@ def process_checkpoint(args: argparse.Namespace, dtype: str) -> Dict:
     print(f"Data divided into {len(shards)} shards")
     if args.use_evo2:
         all_predictions = process_data_evo2(
-            df[["sequence", "hash_index"]].to_dict("records"), args
+            df[["prompt_sequence", "hash_index"]].to_dict("records"), args
         )
     else:
         start_time = time.time()
@@ -566,11 +734,21 @@ def process_checkpoint(args: argparse.Namespace, dtype: str) -> Dict:
     final_predictions = results_df["pred"].tolist()
     final_labels = results_df["label"].tolist()
 
-    accuracies = calculate_accuracy(final_predictions, final_labels)
-    results_df["accuracy"] = accuracies
+    metrics = calculate_accuracy(
+        final_predictions,
+        final_labels,
+        accuracy_mode=args.accuracy_mode,
+        score_len_bp=args.score_len_bp,
+    )
+    results_df["accuracy"] = [item["accuracy"] for item in metrics]
+    results_df["scored_bp"] = [item["scored_bp"] for item in metrics]
 
-    type_means = results_df.groupby("type")["accuracy"].mean()
+    if "type" in results_df.columns:
+        type_means = results_df.groupby("type")["accuracy"].mean()
+    else:
+        type_means = pd.Series(dtype=float)
     overall_mean = results_df["accuracy"].mean()
+    mean_scored_bp = results_df["scored_bp"].mean()
 
     os.makedirs(args.output_dir, exist_ok=True)
     # Use --model_name if provided, otherwise fall back to last component of path
@@ -587,9 +765,19 @@ def process_checkpoint(args: argparse.Namespace, dtype: str) -> Dict:
         )
 
     output_path = os.path.join(args.output_dir, f"{output_basename}.parquet")
-    results_df[["hash_index", "pred", "label", "type", "accuracy"]].to_parquet(
-        output_path
-    )
+    output_columns = [
+        "hash_index",
+        "pred",
+        "label",
+        "dataset_label",
+        "label_source",
+        "label_len_bp",
+        "accuracy",
+        "scored_bp",
+    ]
+    if "type" in results_df.columns:
+        output_columns.append("type")
+    results_df[output_columns].to_parquet(output_path)
 
     summary = {
         "model": args.model,
@@ -599,6 +787,12 @@ def process_checkpoint(args: argparse.Namespace, dtype: str) -> Dict:
         "type_accuracy": {k: float(v) for k, v in type_means.items()},
         "num_sequences": int(total_sequences),
         "dtype": dtype,
+        "accuracy_mode": args.accuracy_mode,
+        "score_len_bp": args.score_len_bp,
+        "label_source": active_label_source,
+        "requested_rollout_bp": int(infer_requested_rollout_bp(args)),
+        "mean_scored_bp": float(mean_scored_bp),
+        "visible_gpu_count": int(num_gpus),
         "timestamp": time.time(),
     }
 
