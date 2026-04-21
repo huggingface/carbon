@@ -13,7 +13,7 @@ uv sync --python 3.12
 Some evals require Evo2 support and can be installed as follows:
 
 ```sh
-uv sync --python 3.12 --extra evo2
+GIT_LFS_SKIP_SMUDGE=1 uv sync --python 3.12 --extra evo2
 ```
 
 ## Pure DNA models
