@@ -108,6 +108,40 @@ def parse_args() -> argparse.Namespace:
         help="Use Evo2 inference (official evo2 library) instead of HF AutoModel",
     )
     parser.add_argument(
+        "--use_vllm",
+        action="store_true",
+        help="Use vLLM for generation (mutually exclusive with --use_evo2).",
+    )
+    parser.add_argument(
+        "--vllm_gpu_memory_utilization",
+        type=float,
+        default=0.9,
+        help="vLLM GPU memory fraction (passed to LLM(gpu_memory_utilization=...)).",
+    )
+    parser.add_argument(
+        "--vllm_max_model_len",
+        type=int,
+        default=None,
+        help="Override vLLM max_model_len. Defaults to max_seq_len/bp_per_token + gen_len + 8.",
+    )
+    parser.add_argument(
+        "--vllm_tensor_parallel_size",
+        type=int,
+        default=1,
+        help="vLLM tensor_parallel_size. Defaults to 1 (set explicitly to shard "
+             "the model across GPUs). TP can fail for models that fall back to "
+             "vLLM's Transformers backend with dimensions not divisible by TP.",
+    )
+    parser.add_argument(
+        "--vllm_data_parallel_size",
+        type=int,
+        default=1,
+        help="vLLM data_parallel_size. Defaults to 1. Set to torch.cuda.device_count() "
+             "to replicate the model across all GPUs and load-balance requests "
+             "(recommended for throughput on multi-GPU nodes when the model fits "
+             "on one GPU).",
+    )
+    parser.add_argument(
         "--push_to_hub",
         action="store_true",
         help="Upload outputs to the Hub",
@@ -194,7 +228,10 @@ def parse_args() -> argparse.Namespace:
         help="Expected bp represented by each token when inferring sequence-tail labels. "
              "For example, a k-mer tokenizer has k base pair per token.",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.use_vllm and args.use_evo2:
+        parser.error("--use_vllm and --use_evo2 are mutually exclusive")
+    return args
 
 
 class SuppressSpecialTokensLogitsProcessor:
@@ -264,6 +301,24 @@ SPECIES_TAG_MAP = {
     "protozoa": "<protozoan_species>",
     "invertebrate": "<invertebrate_species>",
 }
+
+
+def _build_prompt(
+    seq: str, species_type: Optional[str], args: argparse.Namespace
+) -> str:
+    if args.use_dna_tags:
+        prefix = "<dna>"
+    elif args.no_prefix:
+        prefix = ""
+    else:
+        prefix = "<s>"
+    sp_tag = (
+        SPECIES_TAG_MAP.get(species_type, "")
+        if args.use_species_tags and species_type is not None
+        else ""
+    )
+    truncated = seq[-((min(len(seq), args.max_seq_len) // 6) * 6) :]
+    return sp_tag + prefix + truncated
 
 
 def infer_requested_rollout_bp(args: argparse.Namespace) -> int:
@@ -362,30 +417,15 @@ def process_data_shard(shard_id, sequences_data, args, dtype):
         for i in range(0, total_sequences, args.batch_size):
             batch_seqs = sequences_shard[i : i + args.batch_size]
             batch_indices = indices_shard[i : i + args.batch_size]
-
-            if args.use_dna_tags:
-                # For hybrid tokenizer: wrap with <dna> tag to trigger 6-mer tokenization
-                prefix = "<dna>"
-            elif args.no_prefix:
-                # No prefix token
-                prefix = ""
-            else:
-                # Default: use <s> as BOS token for pure 6-mer models
-                prefix = "<s>"
-
-            if args.use_species_tags and species_types is not None:
-                # Per-sequence species tag prefix: <species_tag><dna>SEQUENCE
-                batch_species = species_types[i : i + args.batch_size]
-                truncated_seqs = []
-                for seq, sp_type in zip(batch_seqs, batch_species):
-                    sp_tag = SPECIES_TAG_MAP.get(sp_type, "")
-                    truncated_seq = seq[-((min(len(seq), args.max_seq_len) // 6) * 6) :]
-                    truncated_seqs.append(sp_tag + prefix + truncated_seq)
-            else:
-                truncated_seqs = [
-                    prefix + seq[-((min(len(seq), args.max_seq_len) // 6) * 6) :]
-                    for seq in batch_seqs
-                ]
+            batch_species = (
+                species_types[i : i + args.batch_size]
+                if species_types is not None
+                else [None] * len(batch_seqs)
+            )
+            truncated_seqs = [
+                _build_prompt(seq, sp_type, args)
+                for seq, sp_type in zip(batch_seqs, batch_species)
+            ]
 
             inputs = tokenizer(
                 truncated_seqs,
@@ -562,6 +602,156 @@ def process_data_evo2(sequences_data, args):
     return predictions
 
 
+def _run_vllm_engine(sequences_data, args, tp_size):
+    """Run a single vLLM engine against a list of sequence records and return
+    predictions. Expects the current process to have the desired GPUs visible."""
+    from vllm import LLM, SamplingParams
+    from vllm.inputs import TokensPrompt
+
+    dtype = "bfloat16" if args.bf16 else "float32"
+    if args.upcast_lm_head and dtype != "float32":
+        # vLLM's Transformers backend creates its own ParallelLMHead whose
+        # matmul runs in the model dtype, so HF's monkey-patched fp32
+        # lm_head.forward never gets called. Running the whole engine in
+        # fp32 is the closest equivalent and fully closes the accuracy gap
+        # against the HF bf16 + fp32-lm_head path (empirically within
+        # sampling noise on this model family).
+        print(
+            "vLLM: --upcast_lm_head requested; forcing dtype=float32 for the "
+            "whole model (vLLM cannot surgically upcast only the lm_head "
+            "matmul). Expect ~2x slower matmuls and ~2x weight memory."
+        )
+        dtype = "float32"
+    max_model_len = args.vllm_max_model_len or (
+        args.max_seq_len // args.bp_per_token + args.gen_len + 8
+    )
+
+    tokenizer = AutoTokenizer.from_pretrained(
+        args.model, revision=args.revision, trust_remote_code=True
+    )
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    llm = LLM(
+        model=args.model,
+        revision=args.revision,
+        dtype=dtype,
+        tensor_parallel_size=tp_size,
+        trust_remote_code=True,
+        max_model_len=max_model_len,
+        gpu_memory_utilization=args.vllm_gpu_memory_utilization,
+    )
+
+    if hasattr(tokenizer, "special_tokens"):
+        special_token_ids = tokenizer.convert_tokens_to_ids(tokenizer.special_tokens)
+    elif hasattr(tokenizer, "all_special_ids"):
+        special_token_ids = tokenizer.all_special_ids
+    else:
+        special_token_ids = []
+
+    # vLLM 0.19 removed per-request logits_processors from SamplingParams.
+    # Use logit_bias to push special-token logits far below any other logit so
+    # they never win argmax under greedy decoding (matches HF path's -inf).
+    sampling = SamplingParams(
+        temperature=0.0,
+        max_tokens=args.gen_len,
+        n=1,
+        logit_bias={int(sid): -1e9 for sid in special_token_ids},
+    )
+
+    species_types = (
+        [item.get("type") for item in sequences_data]
+        if args.use_species_tags
+        else [None] * len(sequences_data)
+    )
+    prompts_text = [
+        _build_prompt(item["prompt_sequence"], sp, args)
+        for item, sp in zip(sequences_data, species_types)
+    ]
+
+    # Pre-tokenize with add_special_tokens=False to match the HF path exactly
+    # and preserve the hybrid <dna> tokenizer's 6-mer segmentation (which vLLM's
+    # default tokenize step would otherwise disturb).
+    token_prompts = [
+        TokensPrompt(
+            prompt_token_ids=list(
+                tokenizer(text, add_special_tokens=False)["input_ids"]
+            )
+        )
+        for text in prompts_text
+    ]
+
+    outputs = llm.generate(token_prompts, sampling, use_tqdm=True)
+
+    predictions = []
+    for item, out in zip(sequences_data, outputs):
+        gen_ids = list(out.outputs[0].token_ids)
+        # Per-sample decode mirrors the HF use_dna_tags branch and is cheap.
+        pred = tokenizer.decode(gen_ids)
+        predictions.append({"hash_index": item["hash_index"], "pred": pred})
+
+    return predictions
+
+
+def _vllm_dp_worker(rank, sequences_data, args):
+    """DP worker: pin to a single GPU, then run a standalone vLLM engine on
+    this rank's shard. Must be picklable (module-level function)."""
+    import os
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(rank)
+    return _run_vllm_engine(sequences_data, args, tp_size=1)
+
+
+def process_data_vllm(sequences_data, args):
+    try:
+        import vllm  # noqa: F401  ensure vLLM is installed before dispatching
+    except Exception as e:
+        raise RuntimeError(
+            "vLLM not available; install vllm to use --use_vllm"
+        ) from e
+
+    tp_size = args.vllm_tensor_parallel_size
+    dp_size = args.vllm_data_parallel_size
+
+    print(
+        f"vLLM: model={args.model} revision={args.revision} "
+        f"dtype={'bfloat16' if args.bf16 else 'float32'} tp={tp_size} dp={dp_size}"
+    )
+
+    if dp_size <= 1:
+        return _run_vllm_engine(sequences_data, args, tp_size=tp_size)
+
+    # Data-parallel: N independent vLLM engines, each pinned to one GPU.
+    # Equal static partitioning of prompts across ranks.
+    n = len(sequences_data)
+    shard_size = (n + dp_size - 1) // dp_size
+    shards = []
+    for rank in range(dp_size):
+        start = rank * shard_size
+        end = min(start + shard_size, n)
+        if start < end:
+            shards.append((rank, sequences_data[start:end]))
+    print(
+        f"vLLM DP: sharding {n} prompts across {len(shards)} workers "
+        f"(~{shard_size} per worker)"
+    )
+
+    import multiprocessing as mp
+    ctx = mp.get_context("spawn")
+    all_predictions = []
+    with ProcessPoolExecutor(max_workers=len(shards), mp_context=ctx) as executor:
+        future_to_rank = {
+            executor.submit(_vllm_dp_worker, rank, shard, args): rank
+            for rank, shard in shards
+        }
+        for future in as_completed(future_to_rank):
+            rank = future_to_rank[future]
+            preds = future.result()
+            all_predictions.extend(preds)
+            print(f"vLLM DP rank {rank} completed: {len(preds)} predictions")
+
+    return all_predictions
+
+
 def process_checkpoint(args: argparse.Namespace, dtype: str) -> Dict:
     print("\n" + "=" * 80)
     print("🧬  SEQUENCE RECOVERY EVAL  🧬")
@@ -666,34 +856,44 @@ def process_checkpoint(args: argparse.Namespace, dtype: str) -> Dict:
     )
 
     num_gpus = torch.cuda.device_count()
-    print(f"Using {num_gpus} GPUs with data sharding")
 
-    shard_size = (total_sequences + num_gpus - 1) // num_gpus
-    shards = []
-
-    for i in range(num_gpus):
-        start_idx = i * shard_size
-        end_idx = min((i + 1) * shard_size, total_sequences)
-        if start_idx < total_sequences:
-            shard_df = df.iloc[start_idx:end_idx].copy()
-            shard_cols = ["prompt_sequence", "hash_index"]
-            if args.use_species_tags and "type" in shard_df.columns:
-                shard_cols.append("type")
-            shards.append(
-                {
-                    "shard_id": i,
-                    "data": shard_df[shard_cols].to_dict("records"),
-                    "start_idx": start_idx,
-                    "end_idx": end_idx,
-                }
-            )
-
-    print(f"Data divided into {len(shards)} shards")
     if args.use_evo2:
+        print(f"Using evo2 backend ({num_gpus} visible GPUs, sharded internally)")
         all_predictions = process_data_evo2(
             df[["prompt_sequence", "hash_index"]].to_dict("records"), args
         )
+    elif args.use_vllm:
+        print(f"Using vLLM backend ({num_gpus} visible GPUs)")
+        vllm_cols = ["prompt_sequence", "hash_index"]
+        if args.use_species_tags and "type" in df.columns:
+            vllm_cols.append("type")
+        all_predictions = process_data_vllm(
+            df[vllm_cols].to_dict("records"), args
+        )
     else:
+        print(f"Using {num_gpus} GPUs with data sharding")
+
+        shard_size = (total_sequences + num_gpus - 1) // num_gpus
+        shards = []
+
+        for i in range(num_gpus):
+            start_idx = i * shard_size
+            end_idx = min((i + 1) * shard_size, total_sequences)
+            if start_idx < total_sequences:
+                shard_df = df.iloc[start_idx:end_idx].copy()
+                shard_cols = ["prompt_sequence", "hash_index"]
+                if args.use_species_tags and "type" in shard_df.columns:
+                    shard_cols.append("type")
+                shards.append(
+                    {
+                        "shard_id": i,
+                        "data": shard_df[shard_cols].to_dict("records"),
+                        "start_idx": start_idx,
+                        "end_idx": end_idx,
+                    }
+                )
+
+        print(f"Data divided into {len(shards)} shards")
         start_time = time.time()
 
         with ProcessPoolExecutor(max_workers=num_gpus) as executor:
@@ -793,6 +993,9 @@ def process_checkpoint(args: argparse.Namespace, dtype: str) -> Dict:
         "requested_rollout_bp": int(infer_requested_rollout_bp(args)),
         "mean_scored_bp": float(mean_scored_bp),
         "visible_gpu_count": int(num_gpus),
+        "generation_backend": (
+            "vllm" if args.use_vllm else ("evo2" if args.use_evo2 else "hf")
+        ),
         "timestamp": time.time(),
     }
 
