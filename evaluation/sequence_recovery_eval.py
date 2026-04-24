@@ -40,7 +40,13 @@ from typing import Dict, List, Optional
 import pandas as pd
 import torch
 from tqdm import tqdm
-from transformers import AutoModelForCausalLM, AutoTokenizer, LogitsProcessorList
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    GenerationConfig,
+    LogitsProcessorList,
+)
+from transformers.generation import ContinuousBatchingConfig
 
 
 def parse_args() -> argparse.Namespace:
@@ -142,6 +148,78 @@ def parse_args() -> argparse.Namespace:
              "on one GPU).",
     )
     parser.add_argument(
+        "--generation_backend",
+        default="static",
+        choices=["static", "continuous"],
+        help="HF generation mode: 'static' uses model.generate() per batch; "
+             "'continuous' uses model.generate_batch() with Transformers' "
+             "ContinuousBatchingConfig. Ignored when --use_vllm or --use_evo2 is set.",
+    )
+    parser.add_argument(
+        "--attn_implementation",
+        default=None,
+        help="Optional attention backend passed to AutoModelForCausalLM.from_pretrained "
+             "(e.g. 'paged|sdpa', 'paged|flash_attention_2'). "
+             "Required for continuous batching with a paged backend.",
+    )
+    parser.add_argument(
+        "--cb_max_batch_tokens",
+        type=int,
+        default=None,
+        help="ContinuousBatchingConfig.max_batch_tokens. None uses the library default.",
+    )
+    parser.add_argument(
+        "--cb_max_memory_percent",
+        type=float,
+        default=0.8,
+        help="ContinuousBatchingConfig.max_memory_percent.",
+    )
+    parser.add_argument(
+        "--cb_scheduler_type",
+        default="fifo",
+        choices=["fifo", "prefill_first"],
+        help="ContinuousBatchingConfig.scheduler_type.",
+    )
+    parser.add_argument(
+        "--cb_use_cuda_graph",
+        action="store_true",
+        help="Enable CUDA graphs for continuous batching.",
+    )
+    parser.add_argument(
+        "--cb_use_async_batching",
+        action="store_true",
+        help="Enable async batching for continuous batching.",
+    )
+    parser.add_argument(
+        "--cb_use_default_compile_configs",
+        action="store_true",
+        help="Use the library's default torch.compile configs for continuous batching.",
+    )
+    parser.add_argument(
+        "--cb_q_padding_interval_size",
+        type=int,
+        default=0,
+        help="q_padding_interval_size for continuous batching. 0 keeps library default.",
+    )
+    parser.add_argument(
+        "--cb_kv_padding_interval_size",
+        type=int,
+        default=0,
+        help="kv_padding_interval_size for continuous batching. 0 keeps library default.",
+    )
+    parser.add_argument(
+        "--cb_max_cached_graphs",
+        type=int,
+        default=0,
+        help="max_cached_graphs for continuous batching. 0 keeps library default.",
+    )
+    parser.add_argument(
+        "--cb_max_blocks_per_request",
+        type=int,
+        default=0,
+        help="max_blocks_per_request for the continuous-batching fast decode path.",
+    )
+    parser.add_argument(
         "--push_to_hub",
         action="store_true",
         help="Upload outputs to the Hub",
@@ -231,6 +309,11 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.use_vllm and args.use_evo2:
         parser.error("--use_vllm and --use_evo2 are mutually exclusive")
+    if args.generation_backend == "continuous" and (args.use_vllm or args.use_evo2):
+        parser.error(
+            "--generation_backend continuous is an HF-only option; "
+            "it cannot be combined with --use_vllm or --use_evo2."
+        )
     return args
 
 
@@ -281,15 +364,25 @@ def load_parquet_hf(data_path: str, data_type: str) -> pd.DataFrame:
     return pd.read_parquet(parquet_path)
 
 
-def _load_model_and_tokenizer(model: str, revision: Optional[str], dtype: torch.dtype):
+def _load_model_and_tokenizer(
+    model: str,
+    revision: Optional[str],
+    dtype: torch.dtype,
+    attn_implementation: Optional[str] = None,
+):
     tokenizer = AutoTokenizer.from_pretrained(
         model, revision=revision, trust_remote_code=True
     )
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-    model_obj = AutoModelForCausalLM.from_pretrained(
-        model, revision=revision, trust_remote_code=True, dtype=dtype
-    )
+    kwargs = {
+        "revision": revision,
+        "trust_remote_code": True,
+        "dtype": dtype,
+    }
+    if attn_implementation:
+        kwargs["attn_implementation"] = attn_implementation
+    model_obj = AutoModelForCausalLM.from_pretrained(model, **kwargs)
     return model_obj, tokenizer
 
 
@@ -374,13 +467,121 @@ def prepare_eval_dataframe(df: pd.DataFrame, args: argparse.Namespace) -> pd.Dat
     return prepared_df
 
 
+def _decode_gen_tokens(tokenizer, token_lists, args):
+    # Hybrid tokenizer's batch_decode mangles DNA tokens, so decode per sample.
+    if args.use_dna_tags:
+        return [tokenizer.decode(ids) for ids in token_lists]
+    return tokenizer.batch_decode(token_lists, skip_special_tokens=True)
+
+
+def _run_static_generation(
+    shard_id, model, tokenizer, truncated_prompts, indices, device, args, logits_processor
+):
+    predictions = []
+    total = len(truncated_prompts)
+    with tqdm(total=total, desc=f"Shard {shard_id}", unit="seq") as pbar:
+        for i in range(0, total, args.batch_size):
+            batch_prompts = truncated_prompts[i : i + args.batch_size]
+            batch_indices = indices[i : i + args.batch_size]
+
+            inputs = tokenizer(
+                batch_prompts,
+                add_special_tokens=False,
+                return_tensors="pt",
+                padding=True,
+                truncation=False,
+            )
+            if hasattr(inputs, "to"):
+                inputs = inputs.to(device)
+            else:
+                inputs = {
+                    k: v.to(device) if hasattr(v, "to") else v for k, v in inputs.items()
+                }
+
+            with torch.inference_mode():
+                outputs = model.generate(
+                    **inputs,
+                    max_new_tokens=args.gen_len,
+                    pad_token_id=tokenizer.pad_token_id,
+                    do_sample=False,
+                    logits_processor=logits_processor,
+                )
+
+            batch_token_lists = [
+                outputs[row, -args.gen_len :].tolist() for row in range(outputs.shape[0])
+            ]
+            batch_preds = _decode_gen_tokens(tokenizer, batch_token_lists, args)
+
+            for pred, hash_index in zip(batch_preds, batch_indices):
+                predictions.append({"hash_index": hash_index, "pred": pred})
+            pbar.update(len(batch_prompts))
+    return predictions
+
+
+def _run_continuous_generation(
+    model, tokenizer, truncated_prompts, indices, args, logits_processor
+):
+    input_ids = [
+        tokenizer.encode(p, add_special_tokens=False) for p in truncated_prompts
+    ]
+    generation_config = GenerationConfig(
+        max_new_tokens=args.gen_len,
+        pad_token_id=tokenizer.pad_token_id,
+        eos_token_id=-1,
+        do_sample=False,
+    )
+    cb_config = ContinuousBatchingConfig(
+        max_batch_tokens=args.cb_max_batch_tokens,
+        max_memory_percent=args.cb_max_memory_percent,
+        scheduler_type=args.cb_scheduler_type,
+        use_cuda_graph=args.cb_use_cuda_graph if args.cb_use_cuda_graph else None,
+        use_async_batching=(
+            args.cb_use_async_batching if args.cb_use_async_batching else None
+        ),
+        use_default_compile_configs=args.cb_use_default_compile_configs,
+        q_padding_interval_size=args.cb_q_padding_interval_size,
+        kv_padding_interval_size=args.cb_kv_padding_interval_size,
+        max_cached_graphs=args.cb_max_cached_graphs,
+        max_blocks_per_request=args.cb_max_blocks_per_request,
+    )
+
+    outputs = model.generate_batch(
+        inputs=input_ids,
+        generation_config=generation_config,
+        continuous_batching_config=cb_config,
+        progress_bar=True,
+        logits_processor=logits_processor,
+    )
+    if not outputs:
+        raise RuntimeError(
+            "Continuous batching returned no results. Try a different "
+            "--attn_implementation or disable --cb_use_cuda_graph / "
+            "--cb_use_async_batching."
+        )
+
+    ordered = [
+        out
+        for _, out in sorted(
+            outputs.items(), key=lambda kv: int(kv[0].split("_")[-1])
+        )
+    ]
+    token_lists = [o.generated_tokens for o in ordered]
+    preds = _decode_gen_tokens(tokenizer, token_lists, args)
+    return [
+        {"hash_index": h, "pred": p} for h, p in zip(indices, preds)
+    ]
+
+
 def process_data_shard(shard_id, sequences_data, args, dtype):
     torch.cuda.set_device(shard_id)
     device = f"cuda:{shard_id}"
     dtype = torch.bfloat16 if dtype == "bfloat16" else torch.float32
 
     print(f"Shard {shard_id}: Loading model on GPU {shard_id}...")
-    model, tokenizer = _load_model_and_tokenizer(args.model, args.revision, dtype)
+    model, tokenizer = _load_model_and_tokenizer(
+        args.model, args.revision, dtype,
+        attn_implementation=getattr(args, "attn_implementation", None),
+    )
     model = model.to(device)
 
     if getattr(args, 'upcast_lm_head', False) and hasattr(model, 'lm_head'):
@@ -408,63 +609,25 @@ def process_data_shard(shard_id, sequences_data, args, dtype):
 
     sequences_shard = [item["prompt_sequence"] for item in sequences_data]
     indices_shard = [item["hash_index"] for item in sequences_data]
-    species_types = [item.get("type") for item in sequences_data] if args.use_species_tags else None
-    total_sequences = len(sequences_shard)
+    species_types = (
+        [item.get("type") for item in sequences_data]
+        if args.use_species_tags
+        else [None] * len(sequences_shard)
+    )
+    truncated_prompts = [
+        _build_prompt(seq, sp_type, args)
+        for seq, sp_type in zip(sequences_shard, species_types)
+    ]
 
-    predictions = []
-
-    with tqdm(total=total_sequences, desc=f"Shard {shard_id}", unit="seq") as pbar:
-        for i in range(0, total_sequences, args.batch_size):
-            batch_seqs = sequences_shard[i : i + args.batch_size]
-            batch_indices = indices_shard[i : i + args.batch_size]
-            batch_species = (
-                species_types[i : i + args.batch_size]
-                if species_types is not None
-                else [None] * len(batch_seqs)
-            )
-            truncated_seqs = [
-                _build_prompt(seq, sp_type, args)
-                for seq, sp_type in zip(batch_seqs, batch_species)
-            ]
-
-            inputs = tokenizer(
-                truncated_seqs,
-                add_special_tokens=False,
-                return_tensors="pt",
-                padding=True,
-                truncation=False,
-            )
-            # Handle both BatchEncoding objects and plain dicts (e.g., HybridDNATokenizer)
-            if hasattr(inputs, 'to'):
-                inputs = inputs.to(device)
-            else:
-                inputs = {k: v.to(device) if hasattr(v, 'to') else v for k, v in inputs.items()}
-
-            with torch.inference_mode():
-                outputs = model.generate(
-                    **inputs,
-                    max_new_tokens=args.gen_len,
-                    pad_token_id=tokenizer.pad_token_id,
-                    do_sample=False,
-                    logits_processor=logits_processor,
-                )
-
-            # For hybrid tokenizer, batch_decode doesn't work correctly with DNA tokens,
-            # so we use decode in a loop instead
-            if args.use_dna_tags:
-                batch_preds = [
-                    tokenizer.decode(outputs[i, -args.gen_len :].tolist())
-                    for i in range(outputs.shape[0])
-                ]
-            else:
-                batch_preds = tokenizer.batch_decode(
-                    outputs[:, -args.gen_len :], skip_special_tokens=True
-                )
-
-            for pred, hash_index in zip(batch_preds, batch_indices):
-                predictions.append({"hash_index": hash_index, "pred": pred})
-
-            pbar.update(len(batch_seqs))
+    if args.generation_backend == "continuous":
+        predictions = _run_continuous_generation(
+            model, tokenizer, truncated_prompts, indices_shard, args, logits_processor
+        )
+    else:
+        predictions = _run_static_generation(
+            shard_id, model, tokenizer, truncated_prompts, indices_shard,
+            device, args, logits_processor,
+        )
 
     del model
     torch.cuda.empty_cache()
@@ -994,8 +1157,15 @@ def process_checkpoint(args: argparse.Namespace, dtype: str) -> Dict:
         "mean_scored_bp": float(mean_scored_bp),
         "visible_gpu_count": int(num_gpus),
         "generation_backend": (
-            "vllm" if args.use_vllm else ("evo2" if args.use_evo2 else "hf")
+            "vllm"
+            if args.use_vllm
+            else (
+                "evo2"
+                if args.use_evo2
+                else f"hf-{args.generation_backend}"
+            )
         ),
+        "attn_implementation": getattr(args, "attn_implementation", None),
         "timestamp": time.time(),
     }
 
