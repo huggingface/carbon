@@ -309,6 +309,11 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.use_vllm and args.use_evo2:
         parser.error("--use_vllm and --use_evo2 are mutually exclusive")
+    if args.use_vllm and args.upcast_lm_head:
+        parser.error(
+            "--upcast_lm_head is HF-only: vLLM's Transformers backend builds "
+            "its own ParallelLMHead and never calls the HF-side monkey-patch."
+        )
     if args.generation_backend == "continuous" and (args.use_vllm or args.use_evo2):
         parser.error(
             "--generation_backend continuous is an HF-only option; "
@@ -772,19 +777,6 @@ def _run_vllm_engine(sequences_data, args, tp_size):
     from vllm.inputs import TokensPrompt
 
     dtype = "bfloat16" if args.bf16 else "float32"
-    if args.upcast_lm_head and dtype != "float32":
-        # vLLM's Transformers backend creates its own ParallelLMHead whose
-        # matmul runs in the model dtype, so HF's monkey-patched fp32
-        # lm_head.forward never gets called. Running the whole engine in
-        # fp32 is the closest equivalent and fully closes the accuracy gap
-        # against the HF bf16 + fp32-lm_head path (empirically within
-        # sampling noise on this model family).
-        print(
-            "vLLM: --upcast_lm_head requested; forcing dtype=float32 for the "
-            "whole model (vLLM cannot surgically upcast only the lm_head "
-            "matmul). Expect ~2x slower matmuls and ~2x weight memory."
-        )
-        dtype = "float32"
     max_model_len = args.vllm_max_model_len or (
         args.max_seq_len // args.bp_per_token + args.gen_len + 8
     )
