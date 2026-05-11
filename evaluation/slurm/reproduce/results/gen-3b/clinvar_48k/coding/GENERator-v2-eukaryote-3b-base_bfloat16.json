@@ -1,0 +1,11 @@
+{
+  "model": "GenerTeam/GENERator-v2-eukaryote-3b-base",
+  "revision": null,
+  "backend": "hf",
+  "context_length": 48000,
+  "num_variants": 39473,
+  "AUROC": 0.9197629761534751,
+  "AUPRC": 0.9419062768023747,
+  "breakdowns": {},
+  "dtype": "bfloat16"
+}

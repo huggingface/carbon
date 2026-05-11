@@ -1,0 +1,17 @@
+{
+  "model": "GenerTeam/GENERator-v2-eukaryote-3b-base",
+  "revision": null,
+  "backend": "hf",
+  "context_length": 48000,
+  "num_variants": 15258,
+  "AUROC": 0.9060802082882852,
+  "AUPRC": 0.9188952029053374,
+  "breakdowns": {
+    "variant_type=single_nucleotide_variant": {
+      "n": 15258,
+      "AUROC": 0.9060802082882852,
+      "AUPRC": 0.9188952029053374
+    }
+  },
+  "dtype": "bfloat16"
+}

@@ -1,0 +1,17 @@
+{
+  "model": "hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1",
+  "revision": null,
+  "backend": "hf",
+  "context_length": 24000,
+  "num_variants": 15258,
+  "AUROC": 0.9107198541017083,
+  "AUPRC": 0.925605402705729,
+  "breakdowns": {
+    "variant_type=single_nucleotide_variant": {
+      "n": 15258,
+      "AUROC": 0.9107198541017083,
+      "AUPRC": 0.925605402705729
+    }
+  },
+  "dtype": "bfloat16"
+}

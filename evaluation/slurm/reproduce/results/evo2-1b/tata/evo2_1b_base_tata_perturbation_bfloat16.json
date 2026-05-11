@@ -1,0 +1,10 @@
+{
+  "model": "evo2_1b_base",
+  "revision": null,
+  "task": "tata_perturbation",
+  "dataset": "hf-carbon/test_datasets",
+  "backend": "evo2",
+  "accuracy": 0.3614,
+  "num_examples": 5000,
+  "dtype": "bfloat16"
+}

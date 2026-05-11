@@ -1,0 +1,11 @@
+{
+  "model": "evo2_1b_base",
+  "revision": null,
+  "backend": "evo2",
+  "num_variants": 3893,
+  "num_class_labeled": 3893,
+  "AUROC": 0.732352242728399,
+  "AUPRC": 0.5222244946988455,
+  "Spearman_score_vs_delta": 0.311318663805087,
+  "dtype": "bfloat16"
+}

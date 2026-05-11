@@ -1,0 +1,11 @@
+{
+  "model": "hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1",
+  "revision": null,
+  "backend": "hf",
+  "num_variants": 3893,
+  "num_class_labeled": 3893,
+  "AUROC": 0.8426472625375503,
+  "AUPRC": 0.6489142504813067,
+  "Spearman_score_vs_delta": 0.44662942761735386,
+  "dtype": "bfloat16"
+}

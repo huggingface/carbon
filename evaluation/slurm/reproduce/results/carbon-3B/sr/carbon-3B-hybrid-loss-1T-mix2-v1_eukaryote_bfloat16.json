@@ -1,0 +1,17 @@
+{
+  "model": "hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1",
+  "revision": null,
+  "backend": "hf",
+  "data_type": "eukaryote",
+  "num_sequences": 30000,
+  "overall_accuracy": 0.6173533333333334,
+  "type_accuracy": {
+    "fungi": 0.5332533333333334,
+    "invertebrate": 0.54002,
+    "plant": 0.6379533333333334,
+    "protozoa": 0.42862,
+    "vertebrate_mammalian": 0.8319533333333333,
+    "vertebrate_other": 0.73232
+  },
+  "dtype": "bfloat16"
+}

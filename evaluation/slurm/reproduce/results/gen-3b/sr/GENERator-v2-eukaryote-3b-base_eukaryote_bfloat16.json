@@ -1,0 +1,17 @@
+{
+  "model": "GenerTeam/GENERator-v2-eukaryote-3b-base",
+  "revision": null,
+  "backend": "hf",
+  "data_type": "eukaryote",
+  "num_sequences": 30000,
+  "overall_accuracy": 0.5572077777777777,
+  "type_accuracy": {
+    "fungi": 0.46996000000000004,
+    "invertebrate": 0.4821,
+    "plant": 0.58272,
+    "protozoa": 0.38556666666666667,
+    "vertebrate_mammalian": 0.7529666666666667,
+    "vertebrate_other": 0.6699333333333333
+  },
+  "dtype": "bfloat16"
+}
