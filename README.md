@@ -12,6 +12,17 @@ currently scattered — useful tasks live in different repos, often buried
 alongside evals that need finetuning or that are already saturated, which
 makes reproducibility harder.
 
+## Contents
+
+- [Models](#models)
+- [Inference](#inference)
+- [Training data](#training-data)
+- [Pretraining code](#pretraining-code)
+- [Benchmarks](#benchmarks)
+- [Finetuning](#finetuning)
+- [Citation](#citation)
+- [License](#license)
+
 ## Models
 
 | Model | Params | Notes |
@@ -63,27 +74,18 @@ Carbon was trained on **1 T tokens (≈ 6 T DNA base pairs)** drawn from the
   (GTDB v220 + IMG/PR), included as a smaller fraction (~10 % of the
   training mixture).
 
-The mixture is **eukaryote-heavy by design** — Carbon's target use case is
-eukaryote (especially human / mammalian) downstream tasks: variant effect
-prediction, regulatory-motif scoring, codon usage, mRNA likelihood. The
-prokaryote share is deliberately small but non-zero: enough that the model
-has seen bacterial sequence distribution and can be **continually pretrained
-on a specific prokaryotic clade** to specialise without starting from
-scratch.
+The mixture is **eukaryote-heavy by design**. Carbon's target use case is
+eukaryote. The
+prokaryote share is 10% of the pretraining mixture, so the model can be continually pretrained on prokaryote species.
 
-A fraction of eukaryote sequences during training carry optional metadata
-tags (`<species>`, `<gene_type>`) with random dropout, so the model learns
-to use biological context when available but doesn't depend on it. At
-inference you can prompt with any combination of these tags or none:
+## Pretraining code
 
-```
-<species>fungi<gene_type>protein_coding<dna>ATG...</dna>
-<species>mammalian_species<dna>ATG...</dna>
-<dna>ATG...</dna>                # no conditioning
-```
+Carbon was trained with our Megatron-LM fork:
+[**huggingface/Megatron-LM-Carbon**](https://github.com/huggingface/Megatron-LM-Carbon).
+The fork adds:
 
-See the [dataset card](https://huggingface.co/datasets/hf-carbon/carbon-pretraining-corpus)
-for the full per-subset breakdown, licensing, and loading recipes.
+- Hybrid loss: the loss for bridging coarse 6-mer tokenization and single-nucleotide resolution.
+- Carbon training scripts
 
 ## Benchmarks
 
