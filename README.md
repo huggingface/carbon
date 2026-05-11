@@ -9,7 +9,8 @@ This repo contains the eval code for Carbon tasks: sequence recovery, variant
 effect prediction, TATA promoter perturbation, and synonymous codon
 substitution. We put this together because the zero-shot DNA eval landscape is
 currently scattered — useful tasks live in different repos, often buried
-alongside evals that need finetuning or that are already saturated. 
+alongside evals that need finetuning or that are already saturated, which
+makes reproducibility harder.
 
 ## Models
 
