@@ -85,7 +85,7 @@ The fork adds:
 ## Evaluation
 
 This repo ships a **suite of seven zero-shot DNA evaluations** with
-reproducible code.
+reproducible code. The benchmark datasets are available in this [collection](https://huggingface.co/collections/hf-carbon/dna-benchmarks).
 
 The suite covers four modes of zero-shot evaluation:
 
@@ -93,10 +93,10 @@ The suite covers four modes of zero-shot evaluation:
   both coding (BRCA1, BRCA2) and non-coding regulatory variants (TraitGym
   Mendelian), plus ClinVar for broad pathogenic-vs-benign coverage.
 - **A generative task** — sequence recovery, ported from the GENERator paper.
-- **Two perturbation tasks we built** for Carbon — TATA-box perturbation and
+- **Two perturbation tasks** we built — TATA-box perturbation and
   synonymous-codon substitution — to probe regulatory-motif awareness and
   codon-usage structure.
-- **Long-context retrieval** — Genome-NIAH, a needle-in-a-haystack eval
+- **Long-context retrieval**  we built — Genome-NIAH, a needle-in-a-haystack eval
   adapted to DNA (four tasks × six context lengths up to 786 kbp).
 
 All eval scripts live in [`evaluation/`](evaluation). Each one runs on Carbon,
