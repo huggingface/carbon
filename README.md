@@ -85,10 +85,10 @@ The fork adds:
 
 ## Benchmarks
 
-This repo ships a **suite of six zero-shot DNA evaluations** with reproducible
-code.
+This repo ships a **suite of seven zero-shot DNA evaluations** with
+reproducible code.
 
-The suite covers three modes of zero-shot evaluation:
+The suite covers four modes of zero-shot evaluation:
 
 - **Variant effect prediction**, with three established benchmarks spanning
   both coding (BRCA1, BRCA2) and non-coding regulatory variants (TraitGym
@@ -97,6 +97,8 @@ The suite covers three modes of zero-shot evaluation:
 - **Two perturbation tasks we built** for Carbon — TATA-box perturbation and
   synonymous-codon substitution — to probe regulatory-motif awareness and
   codon-usage structure.
+- **Long-context retrieval** — Genome-NIAH, a needle-in-a-haystack eval
+  adapted to DNA (four tasks × six context lengths up to 786 kbp).
 
 All eval scripts live in [`evaluation/`](evaluation). Each one runs on Carbon,
 GENERator, or Evo2 via a single backend flag, so numbers are directly
@@ -110,6 +112,7 @@ comparable across model families.
 | **BRCA1 & BRCA2 VEP** | Zero-shot VEP on saturation-mutagenesis BRCA1 ([Findlay 2018](https://www.nature.com/articles/s41586-018-0461-z)) and BRCA2 ([Huang 2025](https://www.nature.com/articles/s41586-024-08388-8)). Centered 8 kb window + full-LL delta. | [`vep_eval.py`](evaluation/vep_eval.py) |
 | **TraitGym Mendelian** | 3,380 fine-mapped non-coding regulatory variants for 113 Mendelian diseases ([Benegas et al. 2025](https://www.biorxiv.org/content/10.1101/2025.02.11.637758v1)). Centered 8 kb window + full-LL delta. | [`vep_eval.py`](evaluation/vep_eval.py) |
 | **ClinVar** | Pathogenic vs benign on curated coding + noncoding ClinVar variants. Right-end / next-token scoring with 24 kb left context. | [`clinvar_vep_eval.py`](evaluation/clinvar_vep_eval.py) (uses [`hf-carbon/clinvar-vep-final`](https://huggingface.co/datasets/hf-carbon/clinvar-vep-final) directly) |
+| **Genome-NIAH** | Long-context retrieval: insert a (key, value) pair in a real-genome haystack, ask the model to retrieve the value. Four tasks × six context lengths (up to 786 kbp). | [`genome_niah_eval.py`](evaluation/genome_niah_eval.py) |
 
 See [`evaluation/README.md`](evaluation/README.md) for run commands, DNA-tag
 flags, and per-benchmark details.
