@@ -1,11 +1,15 @@
 # Carbon
 
 Genomic foundation models from Hugging Face. Carbon is a family of causal
-language models trained on **1 T tokens of DNA / 6 T DNA base pairs** from the
+language models trained on **1T tokens of DNA / 6T DNA base pairs** from the
 [Carbon Pretraining Corpus](https://huggingface.co/datasets/hf-carbon/carbon-pretraining-corpus),
-a curated mix targeting downstream performance on sequence recovery, variant
+a curated mix of DNA & RNA sequences.
+
+This repo contains the eval code for Carbon tasks: sequence recovery, variant
 effect prediction, TATA promoter perturbation, and synonymous codon
-substitution.
+substitution. We put this together because the zero-shot DNA eval landscape is
+currently scattered — useful tasks live in different repos, often buried
+alongside evals that need finetuning or that are already saturated. 
 
 ## Models
 
@@ -83,10 +87,7 @@ for the full per-subset breakdown, licensing, and loading recipes.
 ## Benchmarks
 
 This repo ships a **suite of six zero-shot DNA evaluations** with reproducible
-code. We put this together because the zero-shot eval landscape is currently
-scattered — useful tasks live in different repos, often buried alongside evals
-that need finetuning or that are already saturated. We hope a single, cleanly
-documented place to run zero-shot DNA evals helps the field.
+code.
 
 The suite covers three modes of zero-shot evaluation:
 
