@@ -62,14 +62,10 @@ the log-likelihood — see [`evaluation/vep_eval.py`](evaluation/vep_eval.py).
 ## Training data
 
 Carbon was trained on **1 T tokens (≈ 6 T DNA base pairs)** drawn from the
-[Carbon Pretraining Corpus](https://huggingface.co/datasets/hf-carbon/carbon-pretraining-corpus)
-— a 127 M-sequence, ~1 T-nucleotide curated mix of:
+[Carbon Pretraining Corpus](https://huggingface.co/datasets/hf-carbon/carbon-pretraining-corpus) mix of:
 
-- **Eukaryote genomes** (animals, plants, fungi, protists) — full genomic
-  sequences with introns, regulatory regions, and repeats.
-- **mRNA transcripts** — processed, spliced mRNA (exons only), and a
-  splice-aware augmentation that prepends 1,024 bp of promoter context and
-  flanks each exon junction with 32 bp of intronic sequence.
+- **Eukaryote genes** (animals, plants, fungi, protists) — functional genomic regions, extracted from refSeq from Generator training mix.
+- **mRNA transcripts** — processed, spliced mRNA from OpenGenome2.
 - **Prokaryote genomes** — long chromosomal chunks from bacteria and archaea
   (GTDB v220 + IMG/PR), included as a smaller fraction (~10 % of the
   training mixture).
