@@ -9,12 +9,12 @@ single-nucleotide variants and reports AUROC of the LL delta.
   tata_perturbation:
     Disrupt TATA-box motifs in promoters with random substitutions. The model
     should score the intact promoter higher than the perturbed one.
-    Dataset: hf-carbon/carbon_tasks  cols: original_sequence (real), sequence (perturbed)
+    Dataset: hf-carbon/carbon-perturbation-bench  cols: original_sequence (real), sequence (perturbed)
 
   synonymous_codon_substitution:
     Replace codons in a CDS with synonyms encoding the same amino acid. The
     real codon usage should be preferred over the synonymous variant.
-    Dataset: hf-carbon/carbon_tasks  cols: original_sequence (real), sequence (synonymous)
+    Dataset: hf-carbon/carbon-perturbation-bench  cols: original_sequence (real), sequence (synonymous)
 
 Metric: pairwise discrimination accuracy = mean(LL(real) > LL(perturbed)).
 
@@ -27,7 +27,7 @@ Backends and tag flags work the same way as the other Carbon evals:
 Example:
   python perturbation_tasks.py \
       --task tata_perturbation \
-      --model hf-carbon/carbon-3B-hybrid-loss-600B-v1 \
+      --model hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1 \
       --add_dna_tag --bf16
 
   python perturbation_tasks.py \
@@ -48,10 +48,10 @@ from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 # pos_col (real, unperturbed) and neg_col (perturbed) for each task,
-# plus the default split name in hf-carbon/test_datasets.
+# plus the matching subset name in hf-carbon/carbon-perturbation-bench.
 TASKS = {
-    "tata_perturbation":           {"pos": "original_sequence", "neg": "sequence", "split": "tata_perturbed_v2"},
-    "synonymous_codon_substitution": {"pos": "original_sequence", "neg": "sequence", "split": "codon_optimized_v2"},
+    "tata_perturbation":             {"pos": "original_sequence", "neg": "sequence", "subset": "tata"},
+    "synonymous_codon_substitution": {"pos": "original_sequence", "neg": "sequence", "subset": "synonymous_codons"},
 }
 
 
@@ -61,11 +61,11 @@ def parse_args():
     p.add_argument("--model", required=True, help="HF repo / local path / evo2 model name")
     p.add_argument("--revision", default=None)
     p.add_argument("--backend", choices=["hf", "evo2"], default="hf")
-    p.add_argument("--dataset", default="hf-carbon/test_datasets")
-    p.add_argument("--subset", default=None)
-    p.add_argument("--split", default=None,
-                   help="HF split. Defaults to the per-task split in hf-carbon/test_datasets "
-                        "(tata_perturbed_v2 / codon_optimized_v2).")
+    p.add_argument("--dataset", default="hf-carbon/carbon-perturbation-bench")
+    p.add_argument("--subset", default=None,
+                   help="HF dataset config. Defaults to the per-task subset "
+                        "(`tata` / `synonymous_codons`).")
+    p.add_argument("--split", default="train")
     p.add_argument("--output_dir", default="./results/perturbation_tasks")
     p.add_argument("--max_length", type=int, default=2048)
     p.add_argument("--batch_size", type=int, default=16)
@@ -126,8 +126,8 @@ def main():
     print("=" * 70)
 
     task_cfg = TASKS[args.task]
-    if args.split is None:
-        args.split = task_cfg["split"]
+    if args.subset is None:
+        args.subset = task_cfg["subset"]
     df = load_df(args)
     pos_col, neg_col = task_cfg["pos"], task_cfg["neg"]
     pos = wrap(df[pos_col].astype(str).tolist(), args.add_dna_tag)

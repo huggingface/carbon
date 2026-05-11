@@ -6,28 +6,30 @@
 #SBATCH --qos=normal
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:8
-#SBATCH --time=12:00:00
+#SBATCH --time=04:00:00
+
+# BRCA1 + BRCA2 chained on 8 GPUs. ~10 min total on Carbon 3B.
 
 set -euo pipefail
 source ~/.bashrc
-source /fsx/loubna/.venv-2-6-cu124/bin/activate
 
-EVAL=/fsx/loubna/projects_v2/carbon/loubna-workspace/carbon-release/evaluation
+HF_VENV=${HF_VENV:-/fsx/loubna/.venv-2-6-cu124/bin/activate}
+source "$HF_VENV"
+
+EVAL=${EVAL_DIR:-/fsx/loubna/projects_v2/carbon/loubna-workspace/release_repos/carbon/evaluation}
 OUT=$SLURM_SUBMIT_DIR/results
 MODEL=hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1
 
-mkdir -p $OUT/brca1 $OUT/brca2
+mkdir -p "$OUT/brca1" "$OUT/brca2"
 
-# BRCA1
-python $EVAL/vep_eval.py \
-    --model $MODEL \
+python "$EVAL/vep_eval.py" \
+    --model "$MODEL" \
     --data_path hf://datasets/hf-carbon/brca1-vep/brca1_vep.parquet \
     --add_dna_tag --bf16 \
-    --output_dir $OUT/brca1
+    --output_dir "$OUT/brca1"
 
-# BRCA2
-python $EVAL/vep_eval.py \
-    --model $MODEL \
+python "$EVAL/vep_eval.py" \
+    --model "$MODEL" \
     --data_path hf://datasets/hf-carbon/brca2-vep/brca2_vep.parquet \
     --add_dna_tag --bf16 \
-    --output_dir $OUT/brca2
+    --output_dir "$OUT/brca2"

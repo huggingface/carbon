@@ -6,21 +6,24 @@
 #SBATCH --qos=normal
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:8
-#SBATCH --time=12:00:00
+#SBATCH --time=04:00:00
+
+# TraitGym Mendelian with --rev_comp_avg (strand-symmetric scoring; ~2x compute).
 
 set -euo pipefail
 source ~/.bashrc
-source /fsx/loubna/.venv-2-6-cu124/bin/activate
 
-EVAL=/fsx/loubna/projects_v2/carbon/loubna-workspace/carbon-release/evaluation
+HF_VENV=${HF_VENV:-/fsx/loubna/.venv-2-6-cu124/bin/activate}
+source "$HF_VENV"
+
+EVAL=${EVAL_DIR:-/fsx/loubna/projects_v2/carbon/loubna-workspace/release_repos/carbon/evaluation}
 OUT=$SLURM_SUBMIT_DIR/results/traitgym
 MODEL=hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1
 
-mkdir -p $OUT
+mkdir -p "$OUT"
 
-# TraitGym Mendelian (with --rev_comp_avg, strand-symmetric scoring)
-python $EVAL/vep_eval.py \
-    --model $MODEL \
+python "$EVAL/vep_eval.py" \
+    --model "$MODEL" \
     --data_path hf://datasets/hf-carbon/traitgym/mendelian_traits_vep.parquet \
     --add_dna_tag --bf16 --rev_comp_avg \
-    --output_dir $OUT
+    --output_dir "$OUT"

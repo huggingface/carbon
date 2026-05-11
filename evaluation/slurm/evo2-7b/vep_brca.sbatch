@@ -12,25 +12,27 @@
 
 set -euo pipefail
 source ~/.bashrc
-source /fsx/loubna/projects_v2/.evo2-cu124/bin/activate
+
+EVO2_VENV=${EVO2_VENV:-/fsx/loubna/projects_v2/.evo2-cu124/bin/activate}
+source "$EVO2_VENV"
 
 export CUDA_HOME=/usr/local/cuda-12.4
 export HF_HUB_TRUST_REMOTE_CODE=1
 NVIDIA_LIBS=$(python -c "import nvidia.cudnn, os; print(os.path.dirname(nvidia.cudnn.__file__) + '/lib')")
 export LD_LIBRARY_PATH=${NVIDIA_LIBS}:${LD_LIBRARY_PATH:-}
 
-EVAL=/fsx/loubna/projects_v2/carbon/loubna-workspace/carbon-release/evaluation
+EVAL=${EVAL_DIR:-/fsx/loubna/projects_v2/carbon/loubna-workspace/release_repos/carbon/evaluation}
 OUT=$SLURM_SUBMIT_DIR/results
-mkdir -p $OUT/brca1 $OUT/brca2
+mkdir -p "$OUT/brca1" "$OUT/brca2"
 
-python $EVAL/vep_eval.py \
+python "$EVAL/vep_eval.py" \
     --model evo2_7b_base --backend evo2 \
     --data_path hf://datasets/hf-carbon/brca1-vep/brca1_vep.parquet \
     --bf16 \
-    --output_dir $OUT/brca1
+    --output_dir "$OUT/brca1"
 
-python $EVAL/vep_eval.py \
+python "$EVAL/vep_eval.py" \
     --model evo2_7b_base --backend evo2 \
     --data_path hf://datasets/hf-carbon/brca2-vep/brca2_vep.parquet \
     --bf16 \
-    --output_dir $OUT/brca2
+    --output_dir "$OUT/brca2"

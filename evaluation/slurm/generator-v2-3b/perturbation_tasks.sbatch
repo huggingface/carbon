@@ -5,27 +5,29 @@
 #SBATCH --partition=hopper-prod
 #SBATCH --qos=normal
 #SBATCH --nodes=1
-#SBATCH --gres=gpu:2
-#SBATCH --time=06:00:00
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=128G
+#SBATCH --time=02:00:00
 
 set -euo pipefail
 source ~/.bashrc
-source /fsx/loubna/.venv-2-6-cu124/bin/activate
 
-EVAL=/fsx/loubna/projects_v2/carbon/loubna-workspace/carbon-release/evaluation
+HF_VENV=${HF_VENV:-/fsx/loubna/.venv-2-6-cu124/bin/activate}
+source "$HF_VENV"
+
+EVAL=${EVAL_DIR:-/fsx/loubna/projects_v2/carbon/loubna-workspace/release_repos/carbon/evaluation}
 OUT=$SLURM_SUBMIT_DIR/results
 MODEL=GenerTeam/GENERator-v2-eukaryote-3b-base
 
-mkdir -p $OUT/tata $OUT/synonymous_codons
+mkdir -p "$OUT/tata" "$OUT/synonymous_codons"
 
-python $EVAL/perturbation_tasks.py \
+python "$EVAL/perturbation_tasks.py" \
     --task tata_perturbation \
-    --model $MODEL \
-    --bf16 \
-    --output_dir $OUT/tata
+    --model "$MODEL" --bf16 \
+    --output_dir "$OUT/tata"
 
-python $EVAL/perturbation_tasks.py \
+python "$EVAL/perturbation_tasks.py" \
     --task synonymous_codon_substitution \
-    --model $MODEL \
-    --bf16 \
-    --output_dir $OUT/synonymous_codons
+    --model "$MODEL" --bf16 \
+    --output_dir "$OUT/synonymous_codons"

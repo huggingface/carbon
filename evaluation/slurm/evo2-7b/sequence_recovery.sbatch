@@ -12,19 +12,20 @@
 
 set -euo pipefail
 source ~/.bashrc
-source /fsx/loubna/projects_v2/.evo2-cu124/bin/activate
+
+EVO2_VENV=${EVO2_VENV:-/fsx/loubna/projects_v2/.evo2-cu124/bin/activate}
+source "$EVO2_VENV"
 
 export CUDA_HOME=/usr/local/cuda-12.4
 export HF_HUB_TRUST_REMOTE_CODE=1
 NVIDIA_LIBS=$(python -c "import nvidia.cudnn, os; print(os.path.dirname(nvidia.cudnn.__file__) + '/lib')")
 export LD_LIBRARY_PATH=${NVIDIA_LIBS}:${LD_LIBRARY_PATH:-}
 
-EVAL=/fsx/loubna/projects_v2/carbon/loubna-workspace/carbon-release/evaluation
+EVAL=${EVAL_DIR:-/fsx/loubna/projects_v2/carbon/loubna-workspace/release_repos/carbon/evaluation}
 OUT=$SLURM_SUBMIT_DIR/results/sequence_recovery
-mkdir -p $OUT
+mkdir -p "$OUT"
 
-python $EVAL/sequence_recovery.py \
+python "$EVAL/sequence_recovery.py" \
     --model evo2_7b_base --backend evo2 \
-    --data_type eukaryote \
-    --gen_len_bp 30 --bf16 \
-    --output_dir $OUT
+    --data_type eukaryote --gen_len_bp 30 --bf16 \
+    --output_dir "$OUT"

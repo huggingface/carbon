@@ -25,13 +25,13 @@ References:
 Example:
   # Carbon 3B hybrid on BRCA1 (8 GPUs)
   python vep_eval.py \
-      --model hf-carbon/carbon-3B-hybrid-loss-600B-v1 \
+      --model hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1 \
       --data_path hf://datasets/hf-carbon/brca1-vep/brca1_vep.parquet \
       --add_dna_tag --bf16 --output_dir ./results/brca1_vep
 
   # TraitGym Mendelian: pass --rev_comp_avg since variants can sit on either strand
   python vep_eval.py \
-      --model hf-carbon/carbon-3B-hybrid-loss-600B-v1 \
+      --model hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1 \
       --data_path hf://datasets/hf-carbon/traitgym/mendelian_traits_vep.parquet \
       --add_dna_tag --bf16 --rev_comp_avg \
       --output_dir ./results/traitgym_mendelian

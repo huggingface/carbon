@@ -57,7 +57,7 @@ natively.
 
 | Model | Flag |
 |---|---|
-| Carbon hybrid (`carbon-3B-hybrid-loss-600B-v1`, `carbon-8B-hybrid-loss-600B-v1`) | `--add_dna_tag` |
+| Carbon hybrid (`carbon-3B-hybrid-loss-1T-mix2-v1`, `carbon-8B-hybrid-loss-1T-v1`) | `--add_dna_tag` |
 | Carbon pure-DNA (`carbon-3B-pure-dna-*`) | `--add_bos` (sequence-recovery only; uses `<s>`) |
 | GENERator (`GenerTeam/GENERator-*`) | _(no flag — raw DNA)_ |
 | Evo2 (`evo2_1b_base`, `evo2_7b_base`, ...) | `--backend evo2` |
@@ -73,7 +73,7 @@ Dataset: [`GenerTeam/sequence-recovery`](https://huggingface.co/datasets/GenerTe
 ```bash
 # Carbon 3B hybrid (flagship)
 python sequence_recovery.py \
-    --model hf-carbon/carbon-3B-hybrid-loss-600B-v1 \
+    --model hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1 \
     --data_type eukaryote --add_dna_tag --bf16
 
 # GENERator
@@ -126,21 +126,21 @@ point `--data_path` at it.
 ```bash
 # Carbon 3B hybrid · BRCA1 (8 GPUs)
 python vep_eval.py \
-    --model hf-carbon/carbon-3B-hybrid-loss-600B-v1 \
+    --model hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1 \
     --data_path hf://datasets/hf-carbon/brca1-vep/brca1_vep.parquet \
     --add_dna_tag --bf16 \
     --output_dir ./results/brca1_vep
 
 # Same script, BRCA2 — just swap the parquet
 python vep_eval.py \
-    --model hf-carbon/carbon-3B-hybrid-loss-600B-v1 \
+    --model hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1 \
     --data_path hf://datasets/hf-carbon/brca2-vep/brca2_vep.parquet \
     --add_dna_tag --bf16 \
     --output_dir ./results/brca2_vep
 
 # TraitGym Mendelian — pass --rev_comp_avg, variants can sit on either strand
 python vep_eval.py \
-    --model hf-carbon/carbon-3B-hybrid-loss-600B-v1 \
+    --model hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1 \
     --data_path hf://datasets/hf-carbon/traitgym/mendelian_traits_vep.parquet \
     --add_dna_tag --bf16 --rev_comp_avg \
     --output_dir ./results/traitgym_mendelian
@@ -170,9 +170,9 @@ variant_type, …`. If `region` or `variant_type` is present, the script prints
 per-breakdown AUROC / AUPRC automatically.
 
 ```bash
-# Carbon 3B hybrid (flagship, 8 GPUs, 24 kb context)
+# Carbon 3B hybrid (flagship, 8 GPUs, 24 kbp context)
 python clinvar_vep_eval.py \
-    --model hf-carbon/carbon-3B-hybrid-loss-600B-v1 \
+    --model hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1 \
     --add_dna_tag --bf16 --context_length 24000 \
     --output_dir ./results/clinvar
 
@@ -204,13 +204,13 @@ Dataset: [`hf-carbon/carbon_tasks`](https://huggingface.co/datasets/hf-carbon/ca
 # Carbon 3B hybrid · TATA
 python perturbation_tasks.py \
     --task tata_perturbation \
-    --model hf-carbon/carbon-3B-hybrid-loss-600B-v1 \
+    --model hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1 \
     --add_dna_tag --bf16
 
 # Carbon 3B hybrid · synonymous codons
 python perturbation_tasks.py \
     --task synonymous_codon_substitution \
-    --model hf-carbon/carbon-3B-hybrid-loss-600B-v1 \
+    --model hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1 \
     --add_dna_tag --bf16
 
 # Evo2 7B
