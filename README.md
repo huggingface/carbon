@@ -16,12 +16,9 @@ makes reproducibility harder.
 
 - [Models](#models)
 - [Inference](#inference)
-- [Training data](#training-data)
-- [Pretraining code](#pretraining-code)
-- [Benchmarks](#benchmarks)
+- [Pretraining](#pretraining)
+- [Evaluation](#evaluation)
 - [Finetuning](#finetuning)
-- [Citation](#citation)
-- [License](#license)
 
 ## Models
 
@@ -59,7 +56,9 @@ print(tok.decode(out[0]))
 For zero-shot variant scoring, just feed the model the full sequence and read
 the log-likelihood — see [`evaluation/vep_eval.py`](evaluation/vep_eval.py).
 
-## Training data
+## Pretraining
+
+### Training data
 
 Carbon was trained on **1 T tokens (≈ 6 T DNA base pairs)** drawn from the
 [Carbon Pretraining Corpus](https://huggingface.co/datasets/hf-carbon/carbon-pretraining-corpus) mix of:
@@ -74,7 +73,7 @@ The mixture is **eukaryote-heavy by design**. Carbon's target use case is
 eukaryote. The
 prokaryote share is 10% of the pretraining mixture, so the model can be continually pretrained on prokaryote species.
 
-## Pretraining code
+### Pretraining code
 
 Carbon was trained with our Megatron-LM fork:
 [**huggingface/Megatron-LM-Carbon**](https://github.com/huggingface/Megatron-LM-Carbon).
@@ -83,7 +82,7 @@ The fork adds:
 - Hybrid loss: the loss for bridging coarse 6-mer tokenization and single-nucleotide resolution.
 - Carbon training scripts
 
-## Benchmarks
+## Evaluation
 
 This repo ships a **suite of seven zero-shot DNA evaluations** with
 reproducible code.
