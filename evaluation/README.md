@@ -1,9 +1,9 @@
 # Carbon evaluation
 
-Six **zero-shot** DNA evals: sequence recovery, BRCA1, BRCA2, TraitGym
-Mendelian, ClinVar, TATA perturbation, and synonymous codon substitution.
-Every eval supports three model families through one flag, so the same
-script runs on Carbon, GENERator, or Evo2.
+Seven **zero-shot** DNA evals: sequence recovery, BRCA1, BRCA2, TraitGym
+Mendelian, ClinVar, TATA perturbation, synonymous codon substitution, and
+Genome-NIAH long-context retrieval. Every eval supports three model families
+through one flag, so the same script runs on Carbon, GENERator, or Evo2.
 
 ## Contents
 
@@ -11,6 +11,7 @@ script runs on Carbon, GENERator, or Evo2.
 2. [BRCA1, BRCA2, TraitGym Mendelian VEP](#2-brca1-brca2-traitgym-mendelian-vep) — centered 8 kb window, full-LL delta
 3. [ClinVar VEP](#3-clinvar-vep) — right-end / next-token scoring (GENERator recipe)
 4. [Sequence-level perturbation tasks](#4-sequence-level-perturbation-tasks) — TATA + synonymous codons, new tasks we built
+5. [Genome-NIAH long-context retrieval](#5-genome-niah-long-context-retrieval) — long-context needle-in-a-haystack for DNA (4 tasks × 6 context lengths up to 786 kbp)
 
 ## Scripts
 
@@ -20,6 +21,7 @@ script runs on Carbon, GENERator, or Evo2.
 | [`vep_eval.py`](vep_eval.py) | BRCA1 / BRCA2 / TraitGym VEP — **centered 8 kb window**, full-LL delta scoring | AUROC, AUPRC, Spearman ρ |
 | [`clinvar_vep_eval.py`](clinvar_vep_eval.py) | ClinVar VEP — **right-end / next-token** scoring | AUROC, AUPRC |
 | [`perturbation_tasks.py`](perturbation_tasks.py) | TATA perturbation and synonymous-codon substitution (one script, `--task`) | Pairwise discrimination accuracy `mean(LL(real) > LL(perturbed))` |
+| [`genome_niah_eval.py`](genome_niah_eval.py) | Long-context retrieval: insert (key, value) in a real-genome haystack, greedy-decode the value | `gen_exact_match`, `gen_base_accuracy`, `ll_correct` |
 
 > Note: prep scripts for rebuilding the BRCA1 / BRCA2 / TraitGym parquets
 > from primary sources live in [`data_prep/`](data_prep). Not needed for
@@ -219,13 +221,118 @@ python perturbation_tasks.py \
     --model evo2_7b_base --backend evo2 --bf16
 ```
 
+## 5. Genome-NIAH long-context retrieval
+
+A long-context needle-in-a-haystack for DNA. We insert a 24 bp (key, value) pair
+at a controlled depth in a real-genome haystack (OpenGenome2), then ask the
+model to greedy-decode the value when prompted with `haystack + key`.
+
+Four tasks of increasing difficulty:
+
+| `--task` | Distractors | Key identity to distractor |
+|---|---|---|
+| `niah` | 0 | — |
+| `neardup_d4` | 8 | 83% (Δ=4 bp) |
+| `neardup_d2` | 8 | 92% (Δ=2 bp) |
+| `neardup_d1` | 8 | 96% (Δ=1 bp) — discriminator |
+
+Six context lengths (`--ctx`, given in **6-mer tokens** — Carbon's native tokenization unit, where 1 token = 6 bp). The corresponding bp counts below are derived (= ctx × 6):
+
+| `--ctx` (6-mer tokens) | bp | haystack mode |
+|---|---|---|
+| 4096   | 24 kbp  | contiguous |
+| 8192   | 49 kbp  | contiguous |
+| 16384  | 98 kbp  | contiguous |
+| 32768  | 197 kbp | stitched (ACGT runs concatenated) |
+| 65536  | 393 kbp | stitched |
+| 131072 | 786 kbp | stitched |
+
+Dataset is `hf-carbon/genome-niah` (auto-loaded). Each (task, ctx) cell has
+n=500 rows by default. Pass `--max_samples N` for quick smoke tests.
+
+**Metrics.** **The default / headline metric is `gen_exact_match`** — that's the number we report in tables, the one users should compare against. The other two are auxiliary diagnostics, written to the same JSON for convenience but not the primary score.
+
+| metric | role | what it measures |
+|---|---|---|
+| **`gen_exact_match`** | **default / headline** | binary, 1 iff the entire 24 bp greedy-decoded value byte-matches the label |
+| `gen_base_accuracy` | diagnostic | continuous, fraction of the 24 bp matching (chance for ACGT = 0.25) — distinguishes "close but slipped" from "random" |
+| `ll_correct` | sanity check | binary, `LL(positive) > LL(negative)`. **Inflated** for this task — negative has 24 bp wrong so likelihood gap is easy. We see `ll_correct ≥ 0.95` even when `gen_em ≤ 0.10`. Do **not** report as headline. |
+
+Each model is evaluated up to its native context (with optional yarn4× extension for Carbon, documented separately on the yarn variant repos).
+
+```bash
+# Carbon-3B-lc32k at native 32 k (4 k / 8 k / 16 k / 32 k)
+python genome_niah_eval.py \
+    --model hf-carbon/carbon-3B-longctx-32k-rope5M \
+    --task niah --ctx 32768 --add_dna_tag --bf16
+
+# GENERator-v2 3B at native 16 k (4 k / 8 k / 16 k)
+python genome_niah_eval.py \
+    --model GenerTeam/GENERator-v2-eukaryote-3b-base \
+    --task niah --ctx 16384 --bf16
+
+# Evo2-7B at 32 k, single 8-GPU node
+python genome_niah_eval.py \
+    --model evo2_7b --backend evo2 \
+    --task niah --ctx 32768 --prefill_chars 4096
+```
+
+Sample wallclock per (task, ctx) cell, n=500, on **one 8-GPU H100 node** —
+only at each model's native context (Carbon: ≤ 32 k, GEN-v2: ≤ 16 k, Evo2: any):
+
+| backend | model | ctx=4k | ctx=8k | ctx=16k | ctx=32k |
+|---|---|---|---|---|---|
+| hf | Carbon 3B (lc32k) | ~5 min | ~5 min | ~15 min | ~1-2 h |
+| hf | GENERator-v2 3B | ~5 min | ~5 min | ~15 min | — |
+| evo2 | Evo2-7B | ~5 min / 5 rows | ~3 h / 100 rows | ~10 h / 100 rows | ~25 h / 100 rows |
+
+To sweep all 16 short-context Carbon cells (4 tasks × 4 ctx ≤ 32 k) in
+parallel takes ~16 H100-nodes for ~2 h wallclock; sequential it's ~6 h.
+
+> **⚠️ Evo2 is slow at long context.** Per-row decode time grows linearly
+> with KV-cache size: ~3 min/row at 8k → ~14 h/row at 128k on an 8-GPU H100 node.
+> A full n=500 cell at 64k is ~5 H100-node-days; at 128k it's prohibitive.
+>
+> For practical runs, evaluate Evo2 on a **subset** (`--max_samples N`) and
+> in parallel **shards** (`--shard_idx --n_shards`). We reported Evo2 numbers
+> at n=100 (16k, 32k) and n=20 (64k) with this pattern — note that smaller
+> samples mean noisier estimates, so prefer the largest n you can afford
+> (n=100 vs n=20 is a meaningfully tighter signal).
+>
+> ```bash
+> # Evo2 at 32k, n=100 split across 6 shards (run each on its own 8-GPU node)
+> for SHARD in 0 1 2 3 4 5; do
+>   sbatch evaluation/slurm/evo2-7b/genome_niah.sbatch \
+>     POOL=100 SHARD=$SHARD NSHARDS=6 TASK=niah CTX=32768
+> done
+>
+> # Quick smoke test (5 rows, 1 shard, ~15 min)
+> python evaluation/genome_niah_eval.py \
+>   --model evo2_7b --backend evo2 \
+>   --task niah --ctx 8192 --max_samples 5
+> ```
+>
+> Aggregation across shards: `concat the per-shard parquets` then take a
+> sample-weighted mean of `gen_exact_match`.
+
 ## Environment
 
-Two separate Python environments are needed because the Evo2 library has
-incompatible CUDA/PyTorch pins:
+Pinned requirements files at the repo root reproduce the exact versions used
+for Carbon's reported numbers.
 
-- **HF backend** — any recent `transformers` + `torch` install works.
-- **Evo2 backend** — follow the [evo2 install guide](https://github.com/ArcInstitute/evo2).
-  Sequence-recovery on Evo2 needs FlashAttention; the other evals do not.
+**HF backend** (Carbon, GENERator, any HF causal LM):
+```bash
+pip install -r requirements.txt
+```
 
-Common deps (HF backend): `pip install transformers torch pandas scikit-learn tqdm datasets huggingface_hub`.
+**Evo2 backend** — the official [evo2](https://github.com/ArcInstitute/evo2)
+install needs CUDA 12.1+, Python 3.11/3.12, and matching `flash-attn` +
+`transformer-engine` builds for your PyTorch. Follow their install guide
+first, then layer our pins on top:
+```bash
+pip install -r requirements-evo2.txt
+```
+
+We use a separate venv for Evo2 in practice because the `flash-attn` and
+`transformer-engine` wheels are tightly tied to a specific torch + CUDA
+build.

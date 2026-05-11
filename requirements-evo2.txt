@@ -1,0 +1,18 @@
+# Carbon evals — Evo2 backend (Arc Institute's evo2 inference library).
+# Requires CUDA 12.4 + a working flash-attention + transformer-engine build —
+# follow the official Evo2 install guide first:
+#   https://github.com/ArcInstitute/evo2
+# Then `pip install -r requirements-evo2.txt` on top of that env.
+torch==2.6.0
+transformers==5.5.0
+tokenizers==0.22.2
+datasets==4.8.4
+accelerate==1.13.0
+huggingface_hub==1.9.2
+evo2==0.5.5
+flash-attn==2.7.4.post1
+transformer-engine==2.10.0
+scikit-learn==1.8.0
+numpy==2.4.4
+pandas==3.0.2
+tqdm==4.67.3
