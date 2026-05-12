@@ -14,6 +14,7 @@ Usage:
     --data_type eukaryote \
     --model "3B hybrid=Carbon-3B-600B-dna-generv2-fp32-lmhead" \
     --model "8B hybrid=Carbon-8B-600B-dna-fp32-lmhead" \
+    --model "Evo2 7B=Evo2-7B" \
     --out scratch/plots/sequence_recovery_sweep_overall.png \
     --type_panels scratch/plots/sequence_recovery_sweep_types.png
 """
@@ -46,8 +47,8 @@ def parse_args() -> argparse.Namespace:
         required=True,
         dest="models",
         help="Repeatable 'LABEL=MODEL_NAME' or 'LABEL=BASE_DIR::MODEL_NAME' mapping. "
-             "MODEL_NAME must match the directory name under the resolved base dir. "
-             "When BASE_DIR is omitted, --base_dir is used.",
+        "MODEL_NAME must match the directory name under the resolved base dir. "
+        "When BASE_DIR is omitted, --base_dir is used.",
     )
     parser.add_argument(
         "--out",
@@ -65,6 +66,11 @@ def parse_args() -> argparse.Namespace:
         default=0.25,
         help="Horizontal reference line (default 0.25 = 4-base uniform).",
     )
+    parser.add_argument(
+        "--title_suffix",
+        default="",
+        help="Optional text appended to plot titles, e.g. '(n=1000 samples)'.",
+    )
     return parser.parse_args()
 
 
@@ -79,15 +85,12 @@ def load_sweep(base_dir: str, data_type: str, model_name: str):
         gen_len_dir = os.path.basename(os.path.dirname(p))
         gen_len = int(gen_len_dir.removeprefix("gen_len_"))
         requested_bp = int(s.get("requested_rollout_bp") or 0)
-        bp_per_token = (
-            requested_bp // gen_len
-            if gen_len > 0 and requested_bp % gen_len == 0
-            else 6
-        )
+        bp_per_token = int(s.get("bp_per_token") or 6)
+        gen_len_bp = requested_bp if requested_bp > 0 else gen_len * bp_per_token
         rows.append(
             {
                 "gen_len": gen_len,
-                "gen_len_bp": gen_len * bp_per_token,
+                "gen_len_bp": gen_len_bp,
                 "overall": float(s["overall_accuracy"]),
                 "label_source": s.get("label_source", "dataset"),
                 "type_accuracy": s.get("type_accuracy", {}),
@@ -114,7 +117,9 @@ def parse_model_specs(specs, default_base_dir):
     return parsed
 
 
-def plot_overall(models_data, out_path: str, random_baseline: float):
+def plot_overall(
+    models_data, out_path: str, random_baseline: float, title_suffix: str = ""
+):
     fig, ax = plt.subplots(figsize=(11, 6.6), dpi=200)
     colors = plt.rcParams["axes.prop_cycle"].by_key()["color"]
     for (label, _), rows, color in zip(
@@ -148,7 +153,9 @@ def plot_overall(models_data, out_path: str, random_baseline: float):
         label="Random baseline",
     )
     ax.scatter([], [], color="#444444", marker="o", s=60, label="label_source=dataset")
-    ax.scatter([], [], color="#444444", marker="s", s=60, label="label_source=sequence_tail")
+    ax.scatter(
+        [], [], color="#444444", marker="s", s=60, label="label_source=sequence_tail"
+    )
 
     ax.set_xscale("log", base=2)
     all_x = sorted({r["gen_len_bp"] for rows in models_data.values() for r in rows})
@@ -158,7 +165,8 @@ def plot_overall(models_data, out_path: str, random_baseline: float):
     ax.set_xlabel("Generation length (base pairs)")
     ax.set_ylabel("Accuracy")
     ax.set_ylim(0.0, 1.0)
-    ax.set_title("Long-rollout sweep: Overall accuracy")
+    suffix = f" {title_suffix}" if title_suffix else ""
+    ax.set_title(f"Long-rollout sweep: Overall accuracy{suffix}")
     ax.grid(True, alpha=0.3)
     ax.legend(loc="upper right", framealpha=0.95)
     fig.tight_layout()
@@ -168,7 +176,9 @@ def plot_overall(models_data, out_path: str, random_baseline: float):
     plt.close(fig)
 
 
-def plot_type_panels(models_data, out_path: str, random_baseline: float):
+def plot_type_panels(
+    models_data, out_path: str, random_baseline: float, title_suffix: str = ""
+):
     type_names = sorted(
         {
             t
@@ -195,7 +205,9 @@ def plot_type_panels(models_data, out_path: str, random_baseline: float):
             colors,
         ):
             xs = [r["gen_len_bp"] for r in rows if tname in r["type_accuracy"]]
-            ys = [r["type_accuracy"][tname] for r in rows if tname in r["type_accuracy"]]
+            ys = [
+                r["type_accuracy"][tname] for r in rows if tname in r["type_accuracy"]
+            ]
             if not xs:
                 continue
             ax.plot(xs, ys, color=color, linewidth=1.8, label=label)
@@ -224,8 +236,15 @@ def plot_type_panels(models_data, out_path: str, random_baseline: float):
 
     handles, labels = axes[0].get_legend_handles_labels()
     if handles:
-        fig.legend(handles, labels, loc="lower center", ncol=len(labels), bbox_to_anchor=(0.5, -0.01))
-    fig.suptitle("Long-rollout sweep: Per-type accuracy", y=1.00)
+        fig.legend(
+            handles,
+            labels,
+            loc="lower center",
+            ncol=len(labels),
+            bbox_to_anchor=(0.5, -0.01),
+        )
+    suffix = f" {title_suffix}" if title_suffix else ""
+    fig.suptitle(f"Long-rollout sweep: Per-type accuracy{suffix}", y=1.00)
     fig.tight_layout()
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     fig.savefig(out_path, bbox_inches="tight")
@@ -249,9 +268,11 @@ def main():
             f"Check --base_dir / --model names / --data_type."
         )
 
-    plot_overall(models_data, args.out, args.random_baseline)
+    plot_overall(models_data, args.out, args.random_baseline, args.title_suffix)
     if args.type_panels:
-        plot_type_panels(models_data, args.type_panels, args.random_baseline)
+        plot_type_panels(
+            models_data, args.type_panels, args.random_baseline, args.title_suffix
+        )
 
 
 if __name__ == "__main__":
