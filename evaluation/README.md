@@ -277,44 +277,32 @@ python genome_niah_eval.py \
     --task niah --ctx 32768 --prefill_chars 4096
 ```
 
-Sample wallclock per (task, ctx) cell, n=500, on **one 8-GPU H100 node** —
-only at each model's native context (Carbon: ≤ 32 k, GEN-v2: ≤ 16 k, Evo2: any):
+Sample wallclock on **one 8-GPU H100 node**:
 
-| backend | model | ctx=4k | ctx=8k | ctx=16k | ctx=32k |
-|---|---|---|---|---|---|
-| hf | Carbon 3B (lc32k) | ~5 min | ~5 min | ~15 min | ~1-2 h |
-| hf | GENERator-v2 3B | ~5 min | ~5 min | ~15 min | — |
-| evo2 | Evo2-7B | ~5 min / 5 rows | ~3 h / 100 rows | ~10 h / 100 rows | ~25 h / 100 rows |
+| backend | model | unit | 4k | 8k | 16k | 32k | 64k |
+|---|---|---|---|---|---|---|---|
+| hf | Carbon 3B (lc32k) | full sweep, n=500 rows | ~5 min | ~6 min | ~12 min | ~30 min | ~1.5 h |
+| hf | GENERator-v2 3B | full sweep, n=500 rows | ~5 min | ~6 min | ~12 min | — | — |
+| evo2 | Evo2-7B | per row | ~10 min | ~20 min | ~50 min | ~1.5 h | ~4 h |
 
-To sweep all 16 short-context Carbon cells (4 tasks × 4 ctx ≤ 32 k) in
-parallel takes ~16 H100-nodes for ~2 h wallclock; sequential it's ~6 h.
+**Note on Evo2 numbers.** Evo2's reference inference (`vortex`) requires multi-GPU
+model-parallel inference for ctx ≥ ~32 k — a single-GPU run OOMs. We use vortex's
+default 8-GPU pipeline-parallel layer-splitting, and
+add row-level sharding (`--shard_idx --n_shards`) at the eval script so a `(task, ctx)`
+cell can be split across multiple SLURM jobs. Full n=500 on a single
+node is impractical at ctx ≥ 16 k — shard across nodes and/or use `--max_samples`.
 
-> **⚠️ Evo2 is slow at long context.** Per-row decode time grows linearly
-> with KV-cache size: ~3 min/row at 8k → ~14 h/row at 128k on an 8-GPU H100 node.
-> A full n=500 cell at 64k is ~5 H100-node-days; at 128k it's prohibitive.
->
-> For practical runs, evaluate Evo2 on a **subset** (`--max_samples N`) and
-> in parallel **shards** (`--shard_idx --n_shards`). We reported Evo2 numbers
-> at n=100 (16k, 32k) and n=20 (64k) with this pattern — note that smaller
-> samples mean noisier estimates, so prefer the largest n you can afford
-> (n=100 vs n=20 is a meaningfully tighter signal).
->
-> ```bash
-> # Evo2 at 32k, n=100 split across 6 shards (run each on its own 8-GPU node)
-> for SHARD in 0 1 2 3 4 5; do
->   sbatch evaluation/slurm/evo2-7b/genome_niah.sbatch \
->     POOL=100 SHARD=$SHARD NSHARDS=6 TASK=niah CTX=32768
-> done
->
-> # Quick smoke test (5 rows, 1 shard, ~15 min)
-> python evaluation/genome_niah_eval.py \
->   --model evo2_7b --backend evo2 \
->   --task niah --ctx 8192 --max_samples 5
-> ```
->
-> Aggregation across shards: `concat the per-shard parquets` then take a
-> sample-weighted mean of `gen_exact_match`.
+For Evo2 at long ctx, subset (`--max_samples N`) and shard (`--shard_idx --n_shards`).
+We used n=100 at 16-32 k and n=20 at 64 k (smaller n = noisier estimates).
+Aggregate across shards by concatenating per-shard parquets and taking a sample-weighted mean of `gen_exact_match`.
 
+```bash
+# Evo2 at 32k, n=100 split across 6 shards (1 node each)
+for SHARD in 0 1 2 3 4 5; do
+  sbatch evaluation/slurm/evo2-7b/genome_niah.sbatch \
+    POOL=100 SHARD=$SHARD NSHARDS=6 TASK=niah CTX=32768
+done
+```
 ## Environment
 
 Pinned requirements files at the repo root reproduce the exact versions used
