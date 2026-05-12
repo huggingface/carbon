@@ -16,7 +16,7 @@ evo2-7b/            → evo2_7b_base
 | Script | Eval |
 |---|---|
 | `sequence_recovery.sbatch` | Sequence recovery, eukaryote split |
-| `vep_brca.sbatch` | BRCA1 then BRCA2 |
+| `vep_brca2.sbatch` | BRCA2 |
 | `vep_traitgym.sbatch` | TraitGym Mendelian (with `--rev_comp_avg`) |
 | `clinvar.sbatch` | ClinVar coding + non_coding (default 24 kb, `CONTEXT_LENGTH=48000` for 48 kb) |
 | `perturbation_tasks.sbatch` | TATA + synonymous codons |

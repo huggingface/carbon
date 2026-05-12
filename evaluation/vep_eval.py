@@ -1,5 +1,5 @@
 """
-Zero-shot variant-effect prediction (VEP) for BRCA1, BRCA2, and TraitGym.
+Zero-shot variant-effect prediction (VEP) for BRCA2 and TraitGym.
 
 For each SNV: score the full 8,192 bp window log-likelihood for the reference
 and variant sequences. Use delta = LL(var) - LL(ref) as the variant score.
@@ -8,8 +8,7 @@ continuous functional score where available.
 
 The eval is dataset-agnostic — any parquet with the schema
   chrom, pos, ref, alt, score, class, ref_seq, var_seq
-works. We ship three prep scripts that all produce this schema:
-  - prep_brca1.py     → hf-carbon/brca1-vep     (3,893 SNVs)
+works. We ship two prep scripts that produce this schema:
   - prep_brca2.py     → hf-carbon/brca2-vep     (6,836 SNVs)
   - prep_traitgym.py  → hf-carbon/traitgym      (Mendelian: 3,380 / Complex: 11,400)
 
@@ -18,16 +17,15 @@ For ClinVar, see clinvar_vep_eval.py — it uses a different scoring recipe
 + full-LL delta).
 
 References:
-  BRCA1:    Findlay et al. 2018, Nature s41586-018-0461-z   (Evo2 §4.3.15)
   BRCA2:    Huang et al. 2025, Nature s41586-024-08388-8    (Evo2 §A.3.15)
   TraitGym: Benegas, Eraslan & Song 2025, bioRxiv 2025.02.11.637758
 
 Example:
-  # Carbon 3B hybrid on BRCA1 (8 GPUs)
+  # Carbon 3B hybrid on BRCA2 (8 GPUs)
   python vep_eval.py \
       --model hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1 \
-      --data_path hf://datasets/hf-carbon/brca1-vep/brca1_vep.parquet \
-      --add_dna_tag --bf16 --output_dir ./results/brca1_vep
+      --data_path hf://datasets/hf-carbon/brca2-vep/brca2_vep.parquet \
+      --add_dna_tag --bf16 --output_dir ./results/brca2_vep
 
   # TraitGym Mendelian: pass --rev_comp_avg since variants can sit on either strand
   python vep_eval.py \
@@ -39,8 +37,8 @@ Example:
   # Evo2 (1 GPU)
   python vep_eval.py \
       --model evo2_7b_base --backend evo2 \
-      --data_path hf://datasets/hf-carbon/brca1-vep/brca1_vep.parquet \
-      --bf16 --output_dir ./results/brca1_vep_evo2
+      --data_path hf://datasets/hf-carbon/brca2-vep/brca2_vep.parquet \
+      --bf16 --output_dir ./results/brca2_vep_evo2
 """
 
 import argparse
@@ -225,7 +223,7 @@ def main():
     y = (cls["class"] == "LOF").astype(int).values
     scores = -cls["delta"].values  # lower delta -> more LOF
     # Global AUPRC uses auc(recall, precision) — the convention used for the
-    # BRCA1/BRCA2 numbers in Carbon's production reports.
+    # BRCA2 number in Carbon's production reports.
     auroc, auprc = float("nan"), float("nan")
     if y.sum() and y.sum() < len(y):
         auroc = roc_auc_score(y, scores)
@@ -261,7 +259,7 @@ def main():
     # Multi-chromosome datasets (TraitGym, ClinVar genome-wide) report
     # by-chrom-weighted AUROC/AUPRC as the headline — it's the TraitGym
     # leaderboard convention and what every recent paper compares against.
-    # Single-locus datasets (BRCA1, BRCA2) have one chromosome, so by-chrom
+    # Single-locus datasets (BRCA2) have one chromosome, so by-chrom
     # collapses to global; we just print global in that case.
     multi_chrom = not np.isnan(auroc_by_chrom)
 

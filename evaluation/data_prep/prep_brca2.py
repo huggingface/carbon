@@ -9,7 +9,7 @@ Pipeline:
      following Evo2 §A.3.15.
   4. Slice an 8,192 bp window centered on the variant; produce (ref_seq, var_seq).
 
-Output schema (matches prep_brca1.py so brca_vep.py works unchanged):
+Output schema (what vep_eval.py reads):
   chrom, pos, ref, alt, score, class, ref_seq, var_seq
 
 Usage:

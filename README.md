@@ -90,7 +90,7 @@ reproducible code. The benchmark datasets are available in this [collection](htt
 The suite covers four modes of zero-shot evaluation:
 
 - **Variant effect prediction**, with three established benchmarks spanning
-  both coding (BRCA1, BRCA2) and non-coding regulatory variants (TraitGym
+  both coding (BRCA2) and non-coding regulatory variants (TraitGym
   Mendelian), plus ClinVar for broad pathogenic-vs-benign coverage.
 - **A generative task** — sequence recovery, ported from the GENERator paper.
 - **Two perturbation tasks** we built — TATA-box perturbation and
@@ -108,7 +108,7 @@ comparable across model families.
 | **Sequence recovery** | Given a DNA context, generate the next 30 bp; score per-base accuracy against the held-out continuation. Training-free generative eval from the GENERator paper. | [`sequence_recovery.py`](evaluation/sequence_recovery.py) |
 | **TATA perturbation** | Disrupt the TATA-box motif in a promoter; the model should assign higher likelihood to the intact promoter. Probes regulatory-motif awareness. | [`perturbation_tasks.py`](evaluation/perturbation_tasks.py) `--task tata_perturbation` |
 | **Synonymous codon substitution** | Replace codons with synonyms encoding the same amino acid; the model should prefer native codon usage. Probes coding-region structure. | [`perturbation_tasks.py`](evaluation/perturbation_tasks.py) `--task synonymous_codon_substitution` |
-| **BRCA1 & BRCA2 VEP** | Zero-shot VEP on saturation-mutagenesis BRCA1 ([Findlay 2018](https://www.nature.com/articles/s41586-018-0461-z)) and BRCA2 ([Huang 2025](https://www.nature.com/articles/s41586-024-08388-8)). Centered 8 kb window + full-LL delta. | [`vep_eval.py`](evaluation/vep_eval.py) |
+| **BRCA2 VEP** | Zero-shot VEP on saturation-mutagenesis BRCA2 ([Huang 2025](https://www.nature.com/articles/s41586-024-08388-8)). Centered 8 kb window + full-LL delta. | [`vep_eval.py`](evaluation/vep_eval.py) |
 | **TraitGym Mendelian** | 3,380 fine-mapped non-coding regulatory variants for 113 Mendelian diseases ([Benegas et al. 2025](https://www.biorxiv.org/content/10.1101/2025.02.11.637758v1)). Centered 8 kb window + full-LL delta. | [`vep_eval.py`](evaluation/vep_eval.py) |
 | **ClinVar** | Pathogenic vs benign on curated coding + noncoding ClinVar variants. Right-end / next-token scoring with 24 kb left context. | [`clinvar_vep_eval.py`](evaluation/clinvar_vep_eval.py) (uses [`hf-carbon/clinvar-vep-final`](https://huggingface.co/datasets/hf-carbon/clinvar-vep-final) directly) |
 | **Genome-NIAH** | Long-context retrieval: insert a (key, value) pair in a real-genome haystack, ask the model to retrieve the value. Four tasks × six context lengths (up to 786 kbp). | [`genome_niah_eval.py`](evaluation/genome_niah_eval.py) |

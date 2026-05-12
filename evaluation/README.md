@@ -1,14 +1,14 @@
 # Carbon evaluation
 
-Seven **zero-shot** DNA evals: sequence recovery, BRCA1, BRCA2, TraitGym
-Mendelian, ClinVar, TATA perturbation, synonymous codon substitution, and
-Genome-NIAH long-context retrieval. Every eval supports three model families
-through one flag, so the same script runs on Carbon, GENERator, or Evo2.
+Six **zero-shot** DNA evals: sequence recovery, BRCA2, TraitGym Mendelian,
+ClinVar, TATA perturbation, synonymous codon substitution, and Genome-NIAH
+long-context retrieval. Every eval supports three model families through
+one flag, so the same script runs on Carbon, GENERator, or Evo2.
 
 ## Contents
 
 1. [Sequence recovery](#1-sequence-recovery) — next-30-bp generation, exact-base accuracy
-2. [BRCA1, BRCA2, TraitGym Mendelian VEP](#2-brca1-brca2-traitgym-mendelian-vep) — centered 8 kb window, full-LL delta
+2. [BRCA2, TraitGym Mendelian VEP](#2-brca2-traitgym-mendelian-vep) — centered 8 kb window, full-LL delta
 3. [ClinVar VEP](#3-clinvar-vep) — right-end / next-token scoring (GENERator recipe)
 4. [Sequence-level perturbation tasks](#4-sequence-level-perturbation-tasks) — TATA + synonymous codons, new tasks we built
 5. [Genome-NIAH long-context retrieval](#5-genome-niah-long-context-retrieval) — long-context needle-in-a-haystack for DNA (4 tasks × 6 context lengths up to 786 kbp)
@@ -18,14 +18,14 @@ through one flag, so the same script runs on Carbon, GENERator, or Evo2.
 | Script | Eval | Metric |
 |---|---|---|
 | [`sequence_recovery.py`](sequence_recovery.py) | Generate the next 30 bp of a DNA context and compare to the held-out continuation | Per-base accuracy |
-| [`vep_eval.py`](vep_eval.py) | BRCA1 / BRCA2 / TraitGym VEP — **centered 8 kb window**, full-LL delta scoring | AUROC, AUPRC, Spearman ρ |
+| [`vep_eval.py`](vep_eval.py) | BRCA2 / TraitGym VEP — **centered 8 kb window**, full-LL delta scoring | AUROC, AUPRC, Spearman ρ |
 | [`clinvar_vep_eval.py`](clinvar_vep_eval.py) | ClinVar VEP — **right-end / next-token** scoring | AUROC, AUPRC |
 | [`perturbation_tasks.py`](perturbation_tasks.py) | TATA perturbation and synonymous-codon substitution (one script, `--task`) | Pairwise discrimination accuracy `mean(LL(real) > LL(perturbed))` |
 | [`genome_niah_eval.py`](genome_niah_eval.py) | Long-context retrieval: insert (key, value) in a real-genome haystack, greedy-decode the value | `gen_exact_match`, `gen_base_accuracy`, `ll_correct` |
 
-> Note: prep scripts for rebuilding the BRCA1 / BRCA2 / TraitGym parquets
-> from primary sources live in [`data_prep/`](data_prep). Not needed for
-> normal eval runs — every command below defaults to the prebuilt Hub parquets.
+> Note: prep scripts for rebuilding the BRCA2 / TraitGym parquets from
+> primary sources live in [`data_prep/`](data_prep). Not needed for normal
+> eval runs — every command below defaults to the prebuilt Hub parquets.
 
 The two VEP scripts use different scoring recipes. BRCA / TraitGym use
 **centered + full-LL delta** (the Evo2 / TraitGym convention recent papers
@@ -89,7 +89,7 @@ python sequence_recovery.py \
     --data_type eukaryote --gen_len_bp 30 --bf16
 ```
 
-## 2. BRCA1, BRCA2, TraitGym Mendelian VEP
+## 2. BRCA2, TraitGym Mendelian VEP
 
 We use the [Evo2](https://www.biorxiv.org/content/10.1101/2025.02.18.638918v1)
 and [TraitGym](https://www.biorxiv.org/content/10.1101/2025.02.11.637758v1)
@@ -105,35 +105,27 @@ We follow each benchmark's own metric convention:
   [TraitGym](https://github.com/songlab-cal/TraitGym/tree/main) leaderboard.
   Per-chromosome AUPRC uses sklearn's `average_precision_score`, weighted
   by chromosome size.
-- **BRCA1 / BRCA2** — headline is **global AUROC + AUPRC** computed with
+- **BRCA2** — headline is **global AUROC + AUPRC** computed with
   `sklearn.metrics.auc(recall, precision)`, following the Evo2 §4.3.15
   recipe used by the original BRCA reproductions.
 
-For single-locus datasets (BRCA1, BRCA2) the by-chrom number collapses to
-global, so only global is reported. All four numbers (global AUROC/AUPRC,
+For single-locus datasets (BRCA2) the by-chrom number collapses to global,
+so only global is reported. All four numbers (global AUROC/AUPRC,
 by-chrom-weighted AUROC/AUPRC) are saved in the summary JSON regardless of
 dataset.
 
-Single eval script ([`vep_eval.py`](vep_eval.py)) handles all three datasets
-— they share the same parquet schema (`chrom, pos, ref, alt, score, class,
-ref_seq, var_seq`). Build a dataset with the matching `prep_*.py` once, then
-point `--data_path` at it.
+Single eval script ([`vep_eval.py`](vep_eval.py)) handles both datasets —
+they share the same parquet schema (`chrom, pos, ref, alt, score, class,
+ref_seq, var_seq`). Build a dataset with the matching `prep_*.py` once,
+then point `--data_path` at it.
 
 | Dataset | Source | Hub | n | Window |
 |---|---|---|---|---|
-| **BRCA1** | [Findlay et al. 2018, Nature](https://www.nature.com/articles/s41586-018-0461-z) (SGE on BRCA1) | `hf-carbon/brca1-vep` | 3,893 SNVs (823 LOF + 3,070 FUNC/INT) | chr17 hg19 |
 | **BRCA2** | [Huang et al. 2025, Nature](https://www.nature.com/articles/s41586-024-08388-8) (DBD ACMG classes) | `hf-carbon/brca2-vep` | 6,836 SNVs (1,156 LOF + 5,680 FUNC/INT) | chr13 hg19 |
 | **TraitGym Mendelian** | [Benegas, Eraslan & Song 2025](https://www.biorxiv.org/content/10.1101/2025.02.11.637758v1) — **non-coding regulatory variants** for 113 Mendelian diseases | `hf-carbon/traitgym` | 3,380 variants (338 causal + 3,042 matched controls) | hg38, all chromosomes |
 
 ```bash
-# Carbon 3B hybrid · BRCA1 (8 GPUs)
-python vep_eval.py \
-    --model hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1 \
-    --data_path hf://datasets/hf-carbon/brca1-vep/brca1_vep.parquet \
-    --add_dna_tag --bf16 \
-    --output_dir ./results/brca1_vep
-
-# Same script, BRCA2 — just swap the parquet
+# Carbon 3B hybrid · BRCA2 (8 GPUs)
 python vep_eval.py \
     --model hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1 \
     --data_path hf://datasets/hf-carbon/brca2-vep/brca2_vep.parquet \
@@ -150,8 +142,8 @@ python vep_eval.py \
 # Evo2 7B (1 GPU)
 python vep_eval.py \
     --model evo2_7b_base --backend evo2 \
-    --data_path hf://datasets/hf-carbon/brca1-vep/brca1_vep.parquet \
-    --bf16 --output_dir ./results/brca1_vep_evo2
+    --data_path hf://datasets/hf-carbon/brca2-vep/brca2_vep.parquet \
+    --bf16 --output_dir ./results/brca2_vep_evo2
 ```
 
 ## 3. ClinVar VEP
