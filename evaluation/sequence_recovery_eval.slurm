@@ -19,6 +19,10 @@ export HF_HUB_TRUST_REMOTE_CODE=1
 
 set -euo pipefail
 
+if command -v module >/dev/null 2>&1; then
+  module load cuda/12.9
+fi
+
 MODEL=${MODEL:-""}
 MODEL_NAME=${MODEL_NAME:-""}
 REVISION=${REVISION:-""}
@@ -27,6 +31,7 @@ DATA_PATH=${DATA_PATH:-"hf://datasets/GenerTeam/sequence-recovery"}
 OUTPUT_DIR=${OUTPUT_DIR:-"./eval_results/sequence_recovery"}
 BATCH_SIZE=${BATCH_SIZE:-64}
 MAX_SEQ_LEN=${MAX_SEQ_LEN:-6144}
+PROMPT_LEN_BP=${PROMPT_LEN_BP:-""}
 GEN_LEN=${GEN_LEN:-5}
 GEN_LEN_BP=${GEN_LEN_BP:-30}
 ACCURACY_MODE=${ACCURACY_MODE:-"fixed_bp"}
@@ -35,6 +40,11 @@ LABEL_SOURCE=${LABEL_SOURCE:-"auto"}
 BP_PER_TOKEN=${BP_PER_TOKEN:-6}
 BF16=${BF16:-"true"}
 USE_EVO2=${USE_EVO2:-"false"}
+USE_VLLM=${USE_VLLM:-"false"}
+VLLM_GPU_MEMORY_UTILIZATION=${VLLM_GPU_MEMORY_UTILIZATION:-""}
+VLLM_MAX_MODEL_LEN=${VLLM_MAX_MODEL_LEN:-""}
+VLLM_TENSOR_PARALLEL_SIZE=${VLLM_TENSOR_PARALLEL_SIZE:-""}
+VLLM_DATA_PARALLEL_SIZE=${VLLM_DATA_PARALLEL_SIZE:-""}
 USE_DNA_TAGS=${USE_DNA_TAGS:-"false"}
 NO_PREFIX=${NO_PREFIX:-"false"}
 USE_SPECIES_TAGS=${USE_SPECIES_TAGS:-"false"}
@@ -52,6 +62,17 @@ fi
 
 REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 SCRIPT_DIR="${REPO_ROOT}/evaluation"
+
+# Torch 2.10.0+cu129 needs the CUDA libraries bundled in the eval venv to take
+# precedence over the cluster's CUDA 12.1 libraries.
+VENV_SITE_PACKAGES="${SCRIPT_DIR}/.venv/lib/python3.12/site-packages"
+if [[ -d "${VENV_SITE_PACKAGES}/nvidia/nvjitlink/lib" ]]; then
+  export LD_LIBRARY_PATH="${VENV_SITE_PACKAGES}/nvidia/nvjitlink/lib:${LD_LIBRARY_PATH:-}"
+fi
+if [[ -d "${VENV_SITE_PACKAGES}/nvidia/cusparse/lib" ]]; then
+  export LD_LIBRARY_PATH="${VENV_SITE_PACKAGES}/nvidia/cusparse/lib:${LD_LIBRARY_PATH:-}"
+fi
+
 CMD=(uv run --project "$SCRIPT_DIR" python "$SCRIPT_DIR/sequence_recovery_eval.py" \
   --model "$MODEL" \
   --data_type "$DATA_TYPE" \
@@ -66,6 +87,10 @@ CMD=(uv run --project "$SCRIPT_DIR" python "$SCRIPT_DIR/sequence_recovery_eval.p
   --label_source "$LABEL_SOURCE" \
   --bp_per_token "$BP_PER_TOKEN" \
   --sample_seed "$SAMPLE_SEED")
+
+if [[ -n "$PROMPT_LEN_BP" ]]; then
+  CMD+=(--prompt_len_bp "$PROMPT_LEN_BP")
+fi
 
 if [[ -n "$MODEL_NAME" ]]; then
   CMD+=(--model_name "$MODEL_NAME")
@@ -85,6 +110,26 @@ fi
 
 if [[ "$USE_EVO2" == "true" ]]; then
   CMD+=(--use_evo2)
+fi
+
+if [[ "$USE_VLLM" == "true" ]]; then
+  CMD+=(--use_vllm)
+fi
+
+if [[ -n "$VLLM_GPU_MEMORY_UTILIZATION" ]]; then
+  CMD+=(--vllm_gpu_memory_utilization "$VLLM_GPU_MEMORY_UTILIZATION")
+fi
+
+if [[ -n "$VLLM_MAX_MODEL_LEN" ]]; then
+  CMD+=(--vllm_max_model_len "$VLLM_MAX_MODEL_LEN")
+fi
+
+if [[ -n "$VLLM_TENSOR_PARALLEL_SIZE" ]]; then
+  CMD+=(--vllm_tensor_parallel_size "$VLLM_TENSOR_PARALLEL_SIZE")
+fi
+
+if [[ -n "$VLLM_DATA_PARALLEL_SIZE" ]]; then
+  CMD+=(--vllm_data_parallel_size "$VLLM_DATA_PARALLEL_SIZE")
 fi
 
 if [[ "$USE_DNA_TAGS" == "true" ]]; then
@@ -108,4 +153,12 @@ if [[ "$PUSH_TO_HUB" == "true" ]]; then
 fi
 
 echo "Running: ${CMD[*]}"
+
+# These wrapper variables are passed as CLI args above. Unset them before
+# launching Python so vLLM does not interpret them as its own env vars.
+unset VLLM_GPU_MEMORY_UTILIZATION
+unset VLLM_MAX_MODEL_LEN
+unset VLLM_TENSOR_PARALLEL_SIZE
+unset VLLM_DATA_PARALLEL_SIZE
+
 ${CMD[@]}

@@ -83,7 +83,19 @@ def parse_args() -> argparse.Namespace:
         "--max_seq_len",
         type=int,
         default=6144,
-        help="Max input length in bp (truncate left, keep rightmost)",
+        help=(
+            "Legacy max input length in bp (truncate left, keep rightmost). "
+            "Use --prompt_len_bp for prompt-length sweeps."
+        ),
+    )
+    parser.add_argument(
+        "--prompt_len_bp",
+        type=int,
+        default=None,
+        help=(
+            "Prompt/input length in bp before generation. Overrides --max_seq_len "
+            "when provided."
+        ),
     )
     parser.add_argument(
         "--gen_len",
@@ -114,6 +126,15 @@ def parse_args() -> argparse.Namespace:
         help="Use Evo2 inference (official evo2 library) instead of HF AutoModel",
     )
     parser.add_argument(
+        "--evo2_force_prompt_threshold",
+        type=int,
+        default=None,
+        help=(
+            "Optional force_prompt_threshold passed to Evo2.generate. "
+            "Set higher than max_seq_len to explicitly disable prompt forcing."
+        ),
+    )
+    parser.add_argument(
         "--use_vllm",
         action="store_true",
         help="Use vLLM for generation (mutually exclusive with --use_evo2).",
@@ -135,32 +156,32 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=1,
         help="vLLM tensor_parallel_size. Defaults to 1 (set explicitly to shard "
-             "the model across GPUs). TP can fail for models that fall back to "
-             "vLLM's Transformers backend with dimensions not divisible by TP.",
+        "the model across GPUs). TP can fail for models that fall back to "
+        "vLLM's Transformers backend with dimensions not divisible by TP.",
     )
     parser.add_argument(
         "--vllm_data_parallel_size",
         type=int,
         default=1,
         help="vLLM data_parallel_size. Defaults to 1. Set to torch.cuda.device_count() "
-             "to replicate the model across all GPUs and load-balance requests "
-             "(recommended for throughput on multi-GPU nodes when the model fits "
-             "on one GPU).",
+        "to replicate the model across all GPUs and load-balance requests "
+        "(recommended for throughput on multi-GPU nodes when the model fits "
+        "on one GPU).",
     )
     parser.add_argument(
         "--generation_backend",
         default="static",
         choices=["static", "continuous"],
         help="HF generation mode: 'static' uses model.generate() per batch; "
-             "'continuous' uses model.generate_batch() with Transformers' "
-             "ContinuousBatchingConfig. Ignored when --use_vllm or --use_evo2 is set.",
+        "'continuous' uses model.generate_batch() with Transformers' "
+        "ContinuousBatchingConfig. Ignored when --use_vllm or --use_evo2 is set.",
     )
     parser.add_argument(
         "--attn_implementation",
         default=None,
         help="Optional attention backend passed to AutoModelForCausalLM.from_pretrained "
-             "(e.g. 'paged|sdpa', 'paged|flash_attention_2'). "
-             "Required for continuous batching with a paged backend.",
+        "(e.g. 'paged|sdpa', 'paged|flash_attention_2'). "
+        "Required for continuous batching with a paged backend.",
     )
     parser.add_argument(
         "--cb_max_batch_tokens",
@@ -261,9 +282,9 @@ def parse_args() -> argparse.Namespace:
         "--use_species_tags",
         action="store_true",
         help="Prepend species metadata tag before <dna> tag (requires --use_dna_tags). "
-             "Maps dataset 'type' column to tags: vertebrate_mammalian-><mammalian_species>, "
-             "vertebrate_other-><vertebrate_non_mammalian_species>, fungi-><fungi_species>, "
-             "plant-><plant_species>, protozoa-><protozoan_species>, invertebrate-><invertebrate_species>.",
+        "Maps dataset 'type' column to tags: vertebrate_mammalian-><mammalian_species>, "
+        "vertebrate_other-><vertebrate_non_mammalian_species>, fungi-><fungi_species>, "
+        "plant-><plant_species>, protozoa-><protozoan_species>, invertebrate-><invertebrate_species>.",
     )
     parser.add_argument(
         "--model_name",
@@ -274,15 +295,15 @@ def parse_args() -> argparse.Namespace:
         "--upcast_lm_head",
         action="store_true",
         help="Upcast lm_head to float32 while keeping rest in bf16. "
-             "Fixes SR degradation from bf16 rounding in the logit projection.",
+        "Fixes SR degradation from bf16 rounding in the logit projection.",
     )
     parser.add_argument(
         "--accuracy_mode",
         default="fixed_bp",
         choices=["fixed_bp", "prediction_length"],
         help="How to score generated rollouts. "
-             "'fixed_bp' preserves the legacy 30 bp denominator, "
-             "while 'prediction_length' scores the full generated window up to the label length.",
+        "'fixed_bp' preserves the legacy 30 bp denominator, "
+        "while 'prediction_length' scores the full generated window up to the label length.",
     )
     parser.add_argument(
         "--score_len_bp",
@@ -295,16 +316,16 @@ def parse_args() -> argparse.Namespace:
         default="auto",
         choices=["auto", "dataset", "sequence_tail"],
         help="Where evaluation labels come from. "
-             "'dataset' uses the shipped label column, "
-             "'sequence_tail' derives a held-out suffix from the input sequence, "
-             "and 'auto' keeps the dataset label unless the requested scored window exceeds it.",
+        "'dataset' uses the shipped label column, "
+        "'sequence_tail' derives a held-out suffix from the input sequence, "
+        "and 'auto' keeps the dataset label unless the requested scored window exceeds it.",
     )
     parser.add_argument(
         "--bp_per_token",
         type=int,
         default=6,
         help="Expected bp represented by each token when inferring sequence-tail labels. "
-             "For example, a k-mer tokenizer has k base pair per token.",
+        "For example, a k-mer tokenizer has k base pair per token.",
     )
     args = parser.parse_args()
     if args.use_vllm and args.use_evo2:
@@ -415,8 +436,48 @@ def _build_prompt(
         if args.use_species_tags and species_type is not None
         else ""
     )
-    truncated = seq[-((min(len(seq), args.max_seq_len) // 6) * 6) :]
+    truncated = truncate_prompt_sequence(
+        seq,
+        args,
+        align_multiple=max(1, int(getattr(args, "bp_per_token", 6))),
+    )
     return sp_tag + prefix + truncated
+
+
+def resolve_prompt_len_bp(args: argparse.Namespace) -> int:
+    prompt_len_bp = (
+        args.prompt_len_bp
+        if getattr(args, "prompt_len_bp", None) is not None
+        else args.max_seq_len
+    )
+    if prompt_len_bp <= 0:
+        raise ValueError("Prompt length must be positive")
+    return int(prompt_len_bp)
+
+
+def truncate_prompt_sequence(
+    seq: str,
+    args: argparse.Namespace,
+    align_multiple: Optional[int] = None,
+) -> str:
+    keep_len = min(len(seq), resolve_prompt_len_bp(args))
+    if align_multiple is not None and align_multiple > 1:
+        keep_len = (keep_len // align_multiple) * align_multiple
+    if keep_len <= 0:
+        return ""
+    return seq[-keep_len:]
+
+
+def effective_prompt_lengths_bp(
+    prompt_sequences: pd.Series,
+    args: argparse.Namespace,
+    align_multiple: Optional[int] = None,
+) -> pd.Series:
+    requested_prompt_len_bp = resolve_prompt_len_bp(args)
+    lengths = prompt_sequences.str.len().clip(upper=requested_prompt_len_bp)
+    if align_multiple is not None and align_multiple > 1:
+        lengths = (lengths // align_multiple) * align_multiple
+    return lengths.astype(int)
 
 
 def infer_requested_rollout_bp(args: argparse.Namespace) -> int:
@@ -480,7 +541,14 @@ def _decode_gen_tokens(tokenizer, token_lists, args):
 
 
 def _run_static_generation(
-    shard_id, model, tokenizer, truncated_prompts, indices, device, args, logits_processor
+    shard_id,
+    model,
+    tokenizer,
+    truncated_prompts,
+    indices,
+    device,
+    args,
+    logits_processor,
 ):
     predictions = []
     total = len(truncated_prompts)
@@ -500,7 +568,8 @@ def _run_static_generation(
                 inputs = inputs.to(device)
             else:
                 inputs = {
-                    k: v.to(device) if hasattr(v, "to") else v for k, v in inputs.items()
+                    k: v.to(device) if hasattr(v, "to") else v
+                    for k, v in inputs.items()
                 }
 
             with torch.inference_mode():
@@ -513,7 +582,8 @@ def _run_static_generation(
                 )
 
             batch_token_lists = [
-                outputs[row, -args.gen_len :].tolist() for row in range(outputs.shape[0])
+                outputs[row, -args.gen_len :].tolist()
+                for row in range(outputs.shape[0])
             ]
             batch_preds = _decode_gen_tokens(tokenizer, batch_token_lists, args)
 
@@ -566,15 +636,11 @@ def _run_continuous_generation(
 
     ordered = [
         out
-        for _, out in sorted(
-            outputs.items(), key=lambda kv: int(kv[0].split("_")[-1])
-        )
+        for _, out in sorted(outputs.items(), key=lambda kv: int(kv[0].split("_")[-1]))
     ]
     token_lists = [o.generated_tokens for o in ordered]
     preds = _decode_gen_tokens(tokenizer, token_lists, args)
-    return [
-        {"hash_index": h, "pred": p} for h, p in zip(indices, preds)
-    ]
+    return [{"hash_index": h, "pred": p} for h, p in zip(indices, preds)]
 
 
 def process_data_shard(shard_id, sequences_data, args, dtype):
@@ -584,27 +650,39 @@ def process_data_shard(shard_id, sequences_data, args, dtype):
 
     print(f"Shard {shard_id}: Loading model on GPU {shard_id}...")
     model, tokenizer = _load_model_and_tokenizer(
-        args.model, args.revision, dtype,
+        args.model,
+        args.revision,
+        dtype,
         attn_implementation=getattr(args, "attn_implementation", None),
     )
     model = model.to(device)
 
-    if getattr(args, 'upcast_lm_head', False) and hasattr(model, 'lm_head'):
+    if getattr(args, "upcast_lm_head", False) and hasattr(model, "lm_head"):
         # Wrap lm_head forward to compute in fp32 (weights stay bf16, cast on the fly)
         import torch.nn.functional as F
+
         _original_lm_head = model.lm_head
+
         def _fp32_lm_head_forward(input):
-            return F.linear(input.float(), _original_lm_head.weight.float(),
-                          _original_lm_head.bias.float() if _original_lm_head.bias is not None else None)
+            return F.linear(
+                input.float(),
+                _original_lm_head.weight.float(),
+                (
+                    _original_lm_head.bias.float()
+                    if _original_lm_head.bias is not None
+                    else None
+                ),
+            )
+
         model.lm_head.forward = _fp32_lm_head_forward
         print(f"Shard {shard_id}: Wrapped lm_head forward to compute in fp32")
 
     tokenizer.padding_side = "left"
 
     # Get special token IDs - handle different tokenizer implementations
-    if hasattr(tokenizer, 'special_tokens'):
+    if hasattr(tokenizer, "special_tokens"):
         special_token_ids = tokenizer.convert_tokens_to_ids(tokenizer.special_tokens)
-    elif hasattr(tokenizer, 'all_special_ids'):
+    elif hasattr(tokenizer, "all_special_ids"):
         special_token_ids = tokenizer.all_special_ids
     else:
         special_token_ids = []
@@ -630,8 +708,14 @@ def process_data_shard(shard_id, sequences_data, args, dtype):
         )
     else:
         predictions = _run_static_generation(
-            shard_id, model, tokenizer, truncated_prompts, indices_shard,
-            device, args, logits_processor,
+            shard_id,
+            model,
+            tokenizer,
+            truncated_prompts,
+            indices_shard,
+            device,
+            args,
+            logits_processor,
         )
 
     del model
@@ -642,29 +726,6 @@ def process_data_shard(shard_id, sequences_data, args, dtype):
 
 def _evo2_model_name(model_arg: str) -> str:
     return model_arg.split("/")[-1]
-
-
-def _patch_evo2_config_no_flash(model_name: str) -> None:
-    try:
-        from evo2.utils import CONFIG_MAP
-    except Exception:
-        return
-    config_path = CONFIG_MAP.get(model_name)
-    if not config_path or not os.path.exists(config_path):
-        return
-    if config_path.endswith(".json"):
-        with open(config_path, "r", encoding="utf-8") as f:
-            config = json.load(f)
-    else:
-        import yaml
-
-        with open(config_path, "r", encoding="utf-8") as f:
-            config = yaml.load(f, Loader=yaml.FullLoader)
-    config["use_flash_attn"] = False
-    tmp_path = os.path.join("/tmp", f"{model_name}_no_flash.yml")
-    with open(tmp_path, "w", encoding="utf-8") as f:
-        yaml.dump(config, f)
-    CONFIG_MAP[model_name] = tmp_path
 
 
 def process_data_evo2(sequences_data, args):
@@ -678,7 +739,6 @@ def process_data_evo2(sequences_data, args):
     # Do NOT set_device(0) — Evo-2's inference pipeline automatically shards large models across all visible GPUs. See https://github.com/ArcInstitute/evo2/tree/main?tab=readme-ov-file#setup
     # For multi-GPU models (20B, 40B), set CUDA_VISIBLE_DEVICES in the SLURM script.
     model_name = _evo2_model_name(args.model)
-    _patch_evo2_config_no_flash(model_name)
     model = Evo2(model_name)
 
     sequences = [item["prompt_sequence"] for item in sequences_data]
@@ -699,9 +759,7 @@ def process_data_evo2(sequences_data, args):
             batch_indices = indices[i : i + evo2_batch_size]
 
             # Prepare prompts for batch
-            batch_prompts = [
-                seq[-min(len(seq), args.max_seq_len) :] for seq in batch_seqs
-            ]
+            batch_prompts = [truncate_prompt_sequence(seq, args) for seq in batch_seqs]
 
             try:
                 # Try batch generation with original batch size
@@ -709,8 +767,11 @@ def process_data_evo2(sequences_data, args):
                     output = model.generate(
                         prompt_seqs=batch_prompts,
                         n_tokens=args.gen_len_bp,
-                        temperature=0.0,
-                        do_sample=False,
+                        temperature=1.0,
+                        top_k=1,
+                        top_p=0.0,
+                        verbose=0,
+                        force_prompt_threshold=args.evo2_force_prompt_threshold,
                     )
                     # Extract predictions for each sequence in batch
                     for j, (pred, hash_index) in enumerate(
@@ -720,12 +781,15 @@ def process_data_evo2(sequences_data, args):
                 else:
                     # Process individually
                     for seq, hash_index in zip(batch_seqs, batch_indices):
-                        prompt = seq[-min(len(seq), args.max_seq_len) :]
+                        prompt = truncate_prompt_sequence(seq, args)
                         output = model.generate(
                             prompt_seqs=[prompt],
                             n_tokens=args.gen_len_bp,
-                            temperature=0.0,
-                            do_sample=False,
+                            temperature=1.0,
+                            top_k=1,
+                            top_p=0.0,
+                            verbose=0,
+                            force_prompt_threshold=args.evo2_force_prompt_threshold,
                         )
                         predictions.append(
                             {"hash_index": hash_index, "pred": output.sequences[0]}
@@ -746,12 +810,15 @@ def process_data_evo2(sequences_data, args):
                     )
                     torch.cuda.empty_cache()
                     for seq, hash_index in zip(batch_seqs, batch_indices):
-                        prompt = seq[-min(len(seq), args.max_seq_len) :]
+                        prompt = truncate_prompt_sequence(seq, args)
                         output = model.generate(
                             prompt_seqs=[prompt],
                             n_tokens=args.gen_len_bp,
-                            temperature=0.0,
-                            do_sample=False,
+                            temperature=1.0,
+                            top_k=1,
+                            top_p=0.0,
+                            verbose=0,
+                            force_prompt_threshold=args.evo2_force_prompt_threshold,
                         )
                         predictions.append(
                             {"hash_index": hash_index, "pred": output.sequences[0]}
@@ -778,7 +845,7 @@ def _run_vllm_engine(sequences_data, args, tp_size):
 
     dtype = "bfloat16" if args.bf16 else "float32"
     max_model_len = args.vllm_max_model_len or (
-        args.max_seq_len // args.bp_per_token + args.gen_len + 8
+        resolve_prompt_len_bp(args) // args.bp_per_token + args.gen_len + 8
     )
 
     tokenizer = AutoTokenizer.from_pretrained(
@@ -852,6 +919,7 @@ def _vllm_dp_worker(rank, sequences_data, args):
     """DP worker: pin to a single GPU, then run a standalone vLLM engine on
     this rank's shard. Must be picklable (module-level function)."""
     import os
+
     os.environ["CUDA_VISIBLE_DEVICES"] = str(rank)
     return _run_vllm_engine(sequences_data, args, tp_size=1)
 
@@ -860,9 +928,7 @@ def process_data_vllm(sequences_data, args):
     try:
         import vllm  # noqa: F401  ensure vLLM is installed before dispatching
     except Exception as e:
-        raise RuntimeError(
-            "vLLM not available; install vllm to use --use_vllm"
-        ) from e
+        raise RuntimeError("vLLM not available; install vllm to use --use_vllm") from e
 
     tp_size = args.vllm_tensor_parallel_size
     dp_size = args.vllm_data_parallel_size
@@ -891,6 +957,7 @@ def process_data_vllm(sequences_data, args):
     )
 
     import multiprocessing as mp
+
     ctx = mp.get_context("spawn")
     all_predictions = []
     with ProcessPoolExecutor(max_workers=len(shards), mp_context=ctx) as executor:
@@ -993,7 +1060,9 @@ def process_checkpoint(args: argparse.Namespace, dtype: str) -> Dict:
                 random_state=args.sample_seed,
             ).reset_index(drop=True)
 
-        print(f"⚠️  TEST MODE: Limited to {len(df)} samples (from {original_len} total)")
+        print(
+            f"⚠️  TEST MODE: Limited to {len(df)} samples (from {original_len} total)"
+        )
         if "type" in df.columns:
             test_type_counts = df["type"].value_counts()
             print(f"Test subset contains {len(test_type_counts)} types:")
@@ -1001,6 +1070,18 @@ def process_checkpoint(args: argparse.Namespace, dtype: str) -> Dict:
                 print(f"  - {type_name}: {count} sequences")
 
     total_sequences = len(df)
+    prompt_align_multiple = None if args.use_evo2 else max(1, int(args.bp_per_token))
+    prompt_lengths_bp = effective_prompt_lengths_bp(
+        df["prompt_sequence"], args, align_multiple=prompt_align_multiple
+    )
+    requested_prompt_len_bp = resolve_prompt_len_bp(args)
+    print(
+        "Prompt lengths after label holdout/truncation (bp): "
+        f"requested={requested_prompt_len_bp}, "
+        f"min={int(prompt_lengths_bp.min())}, "
+        f"mean={float(prompt_lengths_bp.mean()):.1f}, "
+        f"max={int(prompt_lengths_bp.max())}"
+    )
 
     print("Generating hash indices for sequences...")
     df["hash_index"] = df.apply(
@@ -1022,9 +1103,7 @@ def process_checkpoint(args: argparse.Namespace, dtype: str) -> Dict:
         vllm_cols = ["prompt_sequence", "hash_index"]
         if args.use_species_tags and "type" in df.columns:
             vllm_cols.append("type")
-        all_predictions = process_data_vllm(
-            df[vllm_cols].to_dict("records"), args
-        )
+        all_predictions = process_data_vllm(df[vllm_cols].to_dict("records"), args)
     else:
         print(f"Using {num_gpus} GPUs with data sharding")
 
@@ -1109,15 +1188,13 @@ def process_checkpoint(args: argparse.Namespace, dtype: str) -> Dict:
     # Use --model_name if provided, otherwise fall back to last component of path
     model_name = args.model_name if args.model_name else args.model.split("/")[-1]
     revision_tag = args.revision or "main"
-    upcast_suffix = "_upcast-lm-head" if getattr(args, 'upcast_lm_head', False) else ""
+    upcast_suffix = "_upcast-lm-head" if getattr(args, "upcast_lm_head", False) else ""
     test_suffix = f"_test{args.max_samples}" if args.max_samples is not None else ""
     # If model_name is already provided (e.g., "hybrid_50B_gener_24000"), use simpler naming
     if args.model_name:
         output_basename = f"{model_name}_{dtype}{upcast_suffix}{test_suffix}"
     else:
-        output_basename = (
-            f"{model_name}_{revision_tag}_{args.data_type}_{dtype}{upcast_suffix}{test_suffix}"
-        )
+        output_basename = f"{model_name}_{revision_tag}_{args.data_type}_{dtype}{upcast_suffix}{test_suffix}"
 
     output_path = os.path.join(args.output_dir, f"{output_basename}.parquet")
     output_columns = [
@@ -1146,16 +1223,17 @@ def process_checkpoint(args: argparse.Namespace, dtype: str) -> Dict:
         "score_len_bp": args.score_len_bp,
         "label_source": active_label_source,
         "requested_rollout_bp": int(infer_requested_rollout_bp(args)),
+        "requested_prompt_len_bp": int(requested_prompt_len_bp),
+        "effective_prompt_len_bp_min": int(prompt_lengths_bp.min()),
+        "effective_prompt_len_bp_mean": float(prompt_lengths_bp.mean()),
+        "effective_prompt_len_bp_max": int(prompt_lengths_bp.max()),
+        "bp_per_token": int(args.bp_per_token),
         "mean_scored_bp": float(mean_scored_bp),
         "visible_gpu_count": int(num_gpus),
         "generation_backend": (
             "vllm"
             if args.use_vllm
-            else (
-                "evo2"
-                if args.use_evo2
-                else f"hf-{args.generation_backend}"
-            )
+            else ("evo2" if args.use_evo2 else f"hf-{args.generation_backend}")
         ),
         "attn_implementation": getattr(args, "attn_implementation", None),
         "timestamp": time.time(),

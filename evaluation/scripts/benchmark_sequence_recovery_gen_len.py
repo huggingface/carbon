@@ -83,8 +83,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--gen_len_bp",
         type=int,
-        default=30,
-        help="Base-pair generation length for Evo2 runs",
+        default=None,
+        help=(
+            "Base-pair generation length for Evo2 runs. Defaults to "
+            "gen_len * bp_per_token for each sweep point."
+        ),
+    )
+    parser.add_argument(
+        "--bp_per_token",
+        type=int,
+        default=6,
+        help="Base pairs represented by each HF generation token.",
     )
     parser.add_argument(
         "--batch_size",
@@ -153,6 +162,10 @@ def build_eval_command(
     run_dir: Path,
     gen_len: int,
 ) -> list[str]:
+    gen_len_bp = args.gen_len_bp
+    if gen_len_bp is None:
+        gen_len_bp = gen_len * args.bp_per_token
+
     command = [
         sys.executable,
         str(EVAL_SCRIPT),
@@ -169,11 +182,13 @@ def build_eval_command(
         "--gen_len",
         str(gen_len),
         "--gen_len_bp",
-        str(args.gen_len_bp),
+        str(gen_len_bp),
         "--batch_size",
         str(args.batch_size),
         "--accuracy_mode",
         "prediction_length",
+        "--bp_per_token",
+        str(args.bp_per_token),
     ]
     if args.model_name:
         command.extend(["--model_name", args.model_name])
@@ -210,10 +225,13 @@ def load_run_outputs(run_dir: Path) -> tuple[Path, Path, dict]:
     return parquet_paths[0], summary_path, summary
 
 
-def build_aggregate_rows(gen_len: int, run_df: pd.DataFrame) -> list[dict]:
+def build_aggregate_rows(
+    gen_len: int, generation_bp: int, run_df: pd.DataFrame
+) -> list[dict]:
     rows = [
         {
             "gen_len": gen_len,
+            "generation_bp": generation_bp,
             "group": "overall",
             "accuracy": float(run_df["accuracy"].mean()),
             "num_sequences": int(len(run_df)),
@@ -235,6 +253,7 @@ def build_aggregate_rows(gen_len: int, run_df: pd.DataFrame) -> list[dict]:
             rows.append(
                 {
                     "gen_len": gen_len,
+                    "generation_bp": generation_bp,
                     "group": row["type"],
                     "accuracy": float(row["accuracy"]),
                     "num_sequences": int(row["num_sequences"]),
@@ -254,7 +273,7 @@ def plot_accuracy_by_group(aggregate_df: pd.DataFrame, output_path: Path) -> Non
         if group_df.empty:
             continue
 
-        x_values = group_df["gen_len"] * 6
+        x_values = group_df["generation_bp"]
         style = {
             "marker": "o",
             "linewidth": 2.75 if group == "overall" else 1.8,
@@ -262,7 +281,7 @@ def plot_accuracy_by_group(aggregate_df: pd.DataFrame, output_path: Path) -> Non
         }
         ax.plot(x_values, group_df["accuracy"], label=group, **style)
 
-    bp_lengths = sorted((aggregate_df["gen_len"] * 6).unique())
+    bp_lengths = sorted(aggregate_df["generation_bp"].unique())
     ax.set_xticks(bp_lengths)
     ax.set_xticklabels([str(value) for value in bp_lengths])
     ax.set_xlabel("Base pair generation length")
@@ -287,7 +306,7 @@ def plot_accuracy_by_group(aggregate_df: pd.DataFrame, output_path: Path) -> Non
 def plot_overall_accuracy(aggregate_df: pd.DataFrame, output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     overall_df = aggregate_df[aggregate_df["group"] == "overall"].sort_values("gen_len")
-    x_values = overall_df["gen_len"] * 6
+    x_values = overall_df["generation_bp"]
 
     fig, ax = plt.subplots(figsize=(10, 6))
     ax.plot(
@@ -344,7 +363,10 @@ def main() -> None:
 
         parquet_path, summary_path, summary = load_run_outputs(run_dir)
         run_df = pd.read_parquet(parquet_path)
-        aggregate_rows.extend(build_aggregate_rows(gen_len, run_df))
+        generation_bp = int(
+            summary.get("requested_rollout_bp") or gen_len * args.bp_per_token
+        )
+        aggregate_rows.extend(build_aggregate_rows(gen_len, generation_bp, run_df))
 
         run_manifest.append(
             {
@@ -354,6 +376,7 @@ def main() -> None:
                 "summary_path": str(summary_path),
                 "elapsed_seconds": elapsed,
                 "overall_accuracy": float(summary["overall_accuracy"]),
+                "requested_rollout_bp": generation_bp,
                 "mean_scored_bp": float(summary["mean_scored_bp"]),
                 "visible_gpu_count": int(summary["visible_gpu_count"]),
             }
@@ -365,7 +388,9 @@ def main() -> None:
         categories=GROUP_ORDER,
         ordered=True,
     )
-    aggregate_df = aggregate_df.sort_values(["group", "gen_len"]).reset_index(drop=True)
+    aggregate_df = aggregate_df.sort_values(
+        ["group", "generation_bp", "gen_len"]
+    ).reset_index(drop=True)
 
     aggregate_csv_path = benchmark_root / "accuracy_vs_gen_len.csv"
     aggregate_json_path = benchmark_root / "benchmark_manifest.json"
@@ -383,6 +408,7 @@ def main() -> None:
         "data_type": args.data_type,
         "data_path": args.data_path,
         "gen_lens": args.gen_lens,
+        "bp_per_token": args.bp_per_token,
         "accuracy_mode": "prediction_length",
         "requested_gpu_count": args.num_gpus,
         "cuda_visible_devices": visible_gpu_ids,
