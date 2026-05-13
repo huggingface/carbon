@@ -1,14 +1,14 @@
 # Carbon evaluation
 
-Seven **zero-shot** DNA evals: sequence recovery, BRCA1, BRCA2, TraitGym
-Mendelian, ClinVar, TATA perturbation, synonymous codon substitution, and
-Genome-NIAH long-context retrieval. Every eval supports three model families
-through one flag, so the same script runs on Carbon, GENERator, or Evo2.
+Six **zero-shot** DNA evals: sequence recovery, BRCA2, TraitGym Mendelian,
+ClinVar, TATA perturbation, synonymous codon substitution, and Genome-NIAH
+long-context retrieval. Every eval supports three model families through
+one flag, so the same script runs on Carbon, GENERator, or Evo2.
 
 ## Contents
 
 1. [Sequence recovery](#1-sequence-recovery) — next-30-bp generation, exact-base accuracy
-2. [BRCA1, BRCA2, TraitGym Mendelian VEP](#2-brca1-brca2-traitgym-mendelian-vep) — centered 8 kb window, full-LL delta
+2. [BRCA2, TraitGym Mendelian VEP](#2-brca2-traitgym-mendelian-vep) — centered 8 kb window, full-LL delta
 3. [ClinVar VEP](#3-clinvar-vep) — right-end / next-token scoring (GENERator recipe)
 4. [Sequence-level perturbation tasks](#4-sequence-level-perturbation-tasks) — TATA + synonymous codons, new tasks we built
 5. [Genome-NIAH long-context retrieval](#5-genome-niah-long-context-retrieval) — long-context needle-in-a-haystack for DNA (4 tasks × 6 context lengths up to 786 kbp)
@@ -18,14 +18,14 @@ through one flag, so the same script runs on Carbon, GENERator, or Evo2.
 | Script | Eval | Metric |
 |---|---|---|
 | [`sequence_recovery.py`](sequence_recovery.py) | Generate the next 30 bp of a DNA context and compare to the held-out continuation | Per-base accuracy |
-| [`vep_eval.py`](vep_eval.py) | BRCA1 / BRCA2 / TraitGym VEP — **centered 8 kb window**, full-LL delta scoring | AUROC, AUPRC, Spearman ρ |
+| [`vep_eval.py`](vep_eval.py) | BRCA2 / TraitGym VEP — **centered 8 kb window**, full-LL delta scoring | AUROC, AUPRC, Spearman ρ |
 | [`clinvar_vep_eval.py`](clinvar_vep_eval.py) | ClinVar VEP — **right-end / next-token** scoring | AUROC, AUPRC |
 | [`perturbation_tasks.py`](perturbation_tasks.py) | TATA perturbation and synonymous-codon substitution (one script, `--task`) | Pairwise discrimination accuracy `mean(LL(real) > LL(perturbed))` |
 | [`genome_niah_eval.py`](genome_niah_eval.py) | Long-context retrieval: insert (key, value) in a real-genome haystack, greedy-decode the value | `gen_exact_match`, `gen_base_accuracy`, `ll_correct` |
 
-> Note: prep scripts for rebuilding the BRCA1 / BRCA2 / TraitGym parquets
-> from primary sources live in [`data_prep/`](data_prep). Not needed for
-> normal eval runs — every command below defaults to the prebuilt Hub parquets.
+> Note: prep scripts for rebuilding the BRCA2 / TraitGym parquets from
+> primary sources live in [`data_prep/`](data_prep). Not needed for normal
+> eval runs — every command below defaults to the prebuilt Hub parquets.
 
 The two VEP scripts use different scoring recipes. BRCA / TraitGym use
 **centered + full-LL delta** (the Evo2 / TraitGym convention recent papers
@@ -120,7 +120,7 @@ uv run --project evaluation python evaluation/scripts/plot_sequence_recovery_swe
   --type_panels scratch/plots/sequence_recovery_sweep_types.png
 ```
 
-## 2. BRCA1, BRCA2, TraitGym Mendelian VEP
+## 2. BRCA2, TraitGym Mendelian VEP
 
 We use the [Evo2](https://www.biorxiv.org/content/10.1101/2025.02.18.638918v1)
 and [TraitGym](https://www.biorxiv.org/content/10.1101/2025.02.11.637758v1)
@@ -136,35 +136,27 @@ We follow each benchmark's own metric convention:
   [TraitGym](https://github.com/songlab-cal/TraitGym/tree/main) leaderboard.
   Per-chromosome AUPRC uses sklearn's `average_precision_score`, weighted
   by chromosome size.
-- **BRCA1 / BRCA2** — headline is **global AUROC + AUPRC** computed with
+- **BRCA2** — headline is **global AUROC + AUPRC** computed with
   `sklearn.metrics.auc(recall, precision)`, following the Evo2 §4.3.15
   recipe used by the original BRCA reproductions.
 
-For single-locus datasets (BRCA1, BRCA2) the by-chrom number collapses to
-global, so only global is reported. All four numbers (global AUROC/AUPRC,
+For single-locus datasets (BRCA2) the by-chrom number collapses to global,
+so only global is reported. All four numbers (global AUROC/AUPRC,
 by-chrom-weighted AUROC/AUPRC) are saved in the summary JSON regardless of
 dataset.
 
-Single eval script ([`vep_eval.py`](vep_eval.py)) handles all three datasets
-— they share the same parquet schema (`chrom, pos, ref, alt, score, class,
-ref_seq, var_seq`). Build a dataset with the matching `prep_*.py` once, then
-point `--data_path` at it.
+Single eval script ([`vep_eval.py`](vep_eval.py)) handles both datasets —
+they share the same parquet schema (`chrom, pos, ref, alt, score, class,
+ref_seq, var_seq`). Build a dataset with the matching `prep_*.py` once,
+then point `--data_path` at it.
 
 | Dataset | Source | Hub | n | Window |
 |---|---|---|---|---|
-| **BRCA1** | [Findlay et al. 2018, Nature](https://www.nature.com/articles/s41586-018-0461-z) (SGE on BRCA1) | `hf-carbon/brca1-vep` | 3,893 SNVs (823 LOF + 3,070 FUNC/INT) | chr17 hg19 |
 | **BRCA2** | [Huang et al. 2025, Nature](https://www.nature.com/articles/s41586-024-08388-8) (DBD ACMG classes) | `hf-carbon/brca2-vep` | 6,836 SNVs (1,156 LOF + 5,680 FUNC/INT) | chr13 hg19 |
 | **TraitGym Mendelian** | [Benegas, Eraslan & Song 2025](https://www.biorxiv.org/content/10.1101/2025.02.11.637758v1) — **non-coding regulatory variants** for 113 Mendelian diseases | `hf-carbon/traitgym` | 3,380 variants (338 causal + 3,042 matched controls) | hg38, all chromosomes |
 
 ```bash
-# Carbon 3B hybrid · BRCA1 (8 GPUs)
-python vep_eval.py \
-    --model hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1 \
-    --data_path hf://datasets/hf-carbon/brca1-vep/brca1_vep.parquet \
-    --add_dna_tag --bf16 \
-    --output_dir ./results/brca1_vep
-
-# Same script, BRCA2 — just swap the parquet
+# Carbon 3B hybrid · BRCA2 (8 GPUs)
 python vep_eval.py \
     --model hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1 \
     --data_path hf://datasets/hf-carbon/brca2-vep/brca2_vep.parquet \
@@ -181,8 +173,8 @@ python vep_eval.py \
 # Evo2 7B (1 GPU)
 python vep_eval.py \
     --model evo2_7b_base --backend evo2 \
-    --data_path hf://datasets/hf-carbon/brca1-vep/brca1_vep.parquet \
-    --bf16 --output_dir ./results/brca1_vep_evo2
+    --data_path hf://datasets/hf-carbon/brca2-vep/brca2_vep.parquet \
+    --bf16 --output_dir ./results/brca2_vep_evo2
 ```
 
 ## 3. ClinVar VEP
@@ -308,44 +300,32 @@ python genome_niah_eval.py \
     --task niah --ctx 32768 --prefill_chars 4096
 ```
 
-Sample wallclock per (task, ctx) cell, n=500, on **one 8-GPU H100 node** —
-only at each model's native context (Carbon: ≤ 32 k, GEN-v2: ≤ 16 k, Evo2: any):
+Sample wallclock on **one 8-GPU H100 node**:
 
-| backend | model | ctx=4k | ctx=8k | ctx=16k | ctx=32k |
-|---|---|---|---|---|---|
-| hf | Carbon 3B (lc32k) | ~5 min | ~5 min | ~15 min | ~1-2 h |
-| hf | GENERator-v2 3B | ~5 min | ~5 min | ~15 min | — |
-| evo2 | Evo2-7B | ~5 min / 5 rows | ~3 h / 100 rows | ~10 h / 100 rows | ~25 h / 100 rows |
+| backend | model | unit | 4k | 8k | 16k | 32k | 64k |
+|---|---|---|---|---|---|---|---|
+| hf | Carbon 3B (lc32k) | full sweep, n=500 rows | ~5 min | ~6 min | ~12 min | ~30 min | ~1.5 h |
+| hf | GENERator-v2 3B | full sweep, n=500 rows | ~5 min | ~6 min | ~12 min | — | — |
+| evo2 | Evo2-7B | per row | ~10 min | ~20 min | ~50 min | ~1.5 h | ~4 h |
 
-To sweep all 16 short-context Carbon cells (4 tasks × 4 ctx ≤ 32 k) in
-parallel takes ~16 H100-nodes for ~2 h wallclock; sequential it's ~6 h.
+**Note on Evo2 numbers.** Evo2's reference inference (`vortex`) requires multi-GPU
+model-parallel inference for ctx ≥ ~32 k — a single-GPU run OOMs. We use vortex's
+default 8-GPU pipeline-parallel layer-splitting, and
+add row-level sharding (`--shard_idx --n_shards`) at the eval script so a `(task, ctx)`
+cell can be split across multiple SLURM jobs. Full n=500 on a single
+node is impractical at ctx ≥ 16 k — shard across nodes and/or use `--max_samples`.
 
-> **⚠️ Evo2 is slow at long context.** Per-row decode time grows linearly
-> with KV-cache size: ~3 min/row at 8k → ~14 h/row at 128k on an 8-GPU H100 node.
-> A full n=500 cell at 64k is ~5 H100-node-days; at 128k it's prohibitive.
->
-> For practical runs, evaluate Evo2 on a **subset** (`--max_samples N`) and
-> in parallel **shards** (`--shard_idx --n_shards`). We reported Evo2 numbers
-> at n=100 (16k, 32k) and n=20 (64k) with this pattern — note that smaller
-> samples mean noisier estimates, so prefer the largest n you can afford
-> (n=100 vs n=20 is a meaningfully tighter signal).
->
-> ```bash
-> # Evo2 at 32k, n=100 split across 6 shards (run each on its own 8-GPU node)
-> for SHARD in 0 1 2 3 4 5; do
->   sbatch evaluation/slurm/evo2-7b/genome_niah.sbatch \
->     POOL=100 SHARD=$SHARD NSHARDS=6 TASK=niah CTX=32768
-> done
->
-> # Quick smoke test (5 rows, 1 shard, ~15 min)
-> python evaluation/genome_niah_eval.py \
->   --model evo2_7b --backend evo2 \
->   --task niah --ctx 8192 --max_samples 5
-> ```
->
-> Aggregation across shards: `concat the per-shard parquets` then take a
-> sample-weighted mean of `gen_exact_match`.
+For Evo2 at long ctx, subset (`--max_samples N`) and shard (`--shard_idx --n_shards`).
+We used n=100 at 16-32 k and n=20 at 64 k (smaller n = noisier estimates).
+Aggregate across shards by concatenating per-shard parquets and taking a sample-weighted mean of `gen_exact_match`.
 
+```bash
+# Evo2 at 32k, n=100 split across 6 shards (1 node each)
+for SHARD in 0 1 2 3 4 5; do
+  sbatch evaluation/slurm/evo2-7b/genome_niah.sbatch \
+    POOL=100 SHARD=$SHARD NSHARDS=6 TASK=niah CTX=32768
+done
+```
 ## Environment
 
 Pinned requirements files at the repo root reproduce the exact versions used
