@@ -28,7 +28,7 @@ source "$HF_VENV"
 
 EVAL=${EVAL_DIR:-/fsx/loubna/projects_v2/carbon/loubna-workspace/release_repos/carbon/evaluation}
 OUT=$SLURM_SUBMIT_DIR/results/genome_niah
-MODEL=${MODEL:-hf-carbon/carbon-3B-longctx-32k-rope5M}
+MODEL=${MODEL:-HuggingFaceBio/carbon-3B-longctx-32k-rope5M}
 TASK=${TASK:-niah}
 CTX=${CTX:-32768}
 

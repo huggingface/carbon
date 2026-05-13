@@ -18,12 +18,12 @@ source "$HF_VENV"
 
 EVAL=${EVAL_DIR:-/fsx/loubna/projects_v2/carbon/loubna-workspace/release_repos/carbon/evaluation}
 OUT=$SLURM_SUBMIT_DIR/results/traitgym
-MODEL=hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1
+MODEL=HuggingFaceBio/carbon-3B-hybrid-loss-1T-mix2-v1
 
 mkdir -p "$OUT"
 
 python "$EVAL/vep_eval.py" \
     --model "$MODEL" \
-    --data_path hf://datasets/hf-carbon/traitgym/mendelian_traits_vep.parquet \
+    --data_path hf://datasets/HuggingFaceBio/traitgym/mendelian_traits_vep.parquet \
     --add_dna_tag --bf16 --rev_comp_avg \
     --output_dir "$OUT"

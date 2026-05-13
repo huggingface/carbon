@@ -7,7 +7,7 @@ etc.) are HF-specific — adapt them for your setup if needed.
 One folder per model family, each with the same six scripts:
 
 ```
-carbon-3B/          → hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1   (also lc32k variants)
+carbon-3B/          → HuggingFaceBio/carbon-3B-hybrid-loss-1T-mix2-v1   (also lc32k variants)
 generator-v2-3b/    → GenerTeam/GENERator-v2-eukaryote-3b-base
 evo2-1b/            → evo2_1b_base
 evo2-7b/            → evo2_7b_base

@@ -22,18 +22,18 @@ source "$HF_VENV"
 CONTEXT_LENGTH=${CONTEXT_LENGTH:-24000}
 EVAL=${EVAL_DIR:-/fsx/loubna/projects_v2/carbon/loubna-workspace/release_repos/carbon/evaluation}
 OUT=$SLURM_SUBMIT_DIR/results/clinvar_${CONTEXT_LENGTH}
-MODEL=hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1
+MODEL=HuggingFaceBio/carbon-3B-hybrid-loss-1T-mix2-v1
 
 mkdir -p "$OUT/coding" "$OUT/non_coding"
 
 python "$EVAL/clinvar_vep_eval.py" \
     --model "$MODEL" \
-    --clinvar_path hf://datasets/hf-carbon/clinvar-vep-final/coding/clinvar_coding.parquet \
+    --clinvar_path hf://datasets/HuggingFaceBio/clinvar-vep-final/coding/clinvar_coding.parquet \
     --add_dna_tag --bf16 --context_length "$CONTEXT_LENGTH" \
     --output_dir "$OUT/coding"
 
 python "$EVAL/clinvar_vep_eval.py" \
     --model "$MODEL" \
-    --clinvar_path hf://datasets/hf-carbon/clinvar-vep-final/non_coding/clinvar_non_coding.parquet \
+    --clinvar_path hf://datasets/HuggingFaceBio/clinvar-vep-final/non_coding/clinvar_non_coding.parquet \
     --add_dna_tag --bf16 --context_length "$CONTEXT_LENGTH" \
     --output_dir "$OUT/non_coding"

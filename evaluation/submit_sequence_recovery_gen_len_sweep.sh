@@ -6,7 +6,7 @@ set -euo pipefail
 Usage examples:
 
   3B hybrid model:
-    MODEL=hf-carbon/carbon-3B-600B-dna-generv2-fp32-lmhead \
+    MODEL=HuggingFaceBio/carbon-3B-600B-dna-generv2-fp32-lmhead \
     MODEL_NAME=Carbon-3B-600B-dna-generv2-fp32-lmhead \
     USE_DNA_TAGS=true \
     GEN_LENS="5 10 20 40 80 160 320 640 1280 2560" \
@@ -15,7 +15,7 @@ Usage examples:
     evaluation/submit_sequence_recovery_gen_len_sweep.sh
 
   8B hybrid model:
-    MODEL=hf-carbon/carbon-8B-600B-dna-fp32-lmhead \
+    MODEL=HuggingFaceBio/carbon-8B-600B-dna-fp32-lmhead \
     MODEL_NAME=Carbon-8B-600B-dna-fp32-lmhead \
     USE_DNA_TAGS=true \
     BATCH_SIZE=8 \

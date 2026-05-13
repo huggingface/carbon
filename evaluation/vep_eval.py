@@ -9,8 +9,8 @@ continuous functional score where available.
 The eval is dataset-agnostic — any parquet with the schema
   chrom, pos, ref, alt, score, class, ref_seq, var_seq
 works. We ship two prep scripts that produce this schema:
-  - prep_brca2.py     → hf-carbon/brca2-vep     (6,836 SNVs)
-  - prep_traitgym.py  → hf-carbon/traitgym      (Mendelian: 3,380 / Complex: 11,400)
+  - prep_brca2.py     → HuggingFaceBio/brca2-vep     (6,836 SNVs)
+  - prep_traitgym.py  → HuggingFaceBio/traitgym      (Mendelian: 3,380 / Complex: 11,400)
 
 For ClinVar, see clinvar_vep_eval.py — it uses a different scoring recipe
 (next-token at the right end of a left-context window, instead of centered
@@ -23,21 +23,21 @@ References:
 Example:
   # Carbon 3B hybrid on BRCA2 (8 GPUs)
   python vep_eval.py \
-      --model hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1 \
-      --data_path hf://datasets/hf-carbon/brca2-vep/brca2_vep.parquet \
+      --model HuggingFaceBio/carbon-3B-hybrid-loss-1T-mix2-v1 \
+      --data_path hf://datasets/HuggingFaceBio/brca2-vep/brca2_vep.parquet \
       --add_dna_tag --bf16 --output_dir ./results/brca2_vep
 
   # TraitGym Mendelian: pass --rev_comp_avg since variants can sit on either strand
   python vep_eval.py \
-      --model hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1 \
-      --data_path hf://datasets/hf-carbon/traitgym/mendelian_traits_vep.parquet \
+      --model HuggingFaceBio/carbon-3B-hybrid-loss-1T-mix2-v1 \
+      --data_path hf://datasets/HuggingFaceBio/traitgym/mendelian_traits_vep.parquet \
       --add_dna_tag --bf16 --rev_comp_avg \
       --output_dir ./results/traitgym_mendelian
 
   # Evo2 (1 GPU)
   python vep_eval.py \
       --model evo2_7b_base --backend evo2 \
-      --data_path hf://datasets/hf-carbon/brca2-vep/brca2_vep.parquet \
+      --data_path hf://datasets/HuggingFaceBio/brca2-vep/brca2_vep.parquet \
       --bf16 --output_dir ./results/brca2_vep_evo2
 """
 

@@ -21,13 +21,13 @@ explanation.
 
 Example (single GPU):
   python finetune_promoter.py \
-      --model hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1 \
+      --model HuggingFaceBio/carbon-3B-hybrid-loss-1T-mix2-v1 \
       --add_dna_tag \
       --output_dir ./outputs/promoter-carbon-3B
 
 Example (multi-GPU via torchrun):
   torchrun --nproc_per_node=8 finetune_promoter.py \
-      --model hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1 \
+      --model HuggingFaceBio/carbon-3B-hybrid-loss-1T-mix2-v1 \
       --add_dna_tag --batch_size 4 --grad_accum 4 \
       --output_dir ./outputs/promoter-carbon-3B
 """
