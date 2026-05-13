@@ -18,7 +18,7 @@ Eukaryote / bacteria / others come from the GenerTeam/sequence-recovery dataset.
 Example:
   # Carbon 3B hybrid (flagship)
   python sequence_recovery.py \
-      --model HuggingFaceBio/carbon-3B-hybrid-loss-1T-mix2-v1 \
+      --model HuggingFaceBio/Carbon-3B \
       --data_type eukaryote --add_dna_tag --bf16
 
   # GENERator

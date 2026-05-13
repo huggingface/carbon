@@ -22,7 +22,7 @@ source "$HF_VENV"
 CONTEXT_LENGTH=${CONTEXT_LENGTH:-24000}
 EVAL=${EVAL_DIR:-/fsx/loubna/projects_v2/carbon/loubna-workspace/release_repos/carbon/evaluation}
 OUT=$SLURM_SUBMIT_DIR/results/clinvar_${CONTEXT_LENGTH}
-MODEL=HuggingFaceBio/carbon-3B-hybrid-loss-1T-mix2-v1
+MODEL=HuggingFaceBio/Carbon-3B
 
 mkdir -p "$OUT/coding" "$OUT/non_coding"
 

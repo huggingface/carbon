@@ -18,7 +18,7 @@ source "$HF_VENV"
 
 EVAL=${EVAL_DIR:-/fsx/loubna/projects_v2/carbon/loubna-workspace/release_repos/carbon/evaluation}
 OUT=$SLURM_SUBMIT_DIR/results
-MODEL=HuggingFaceBio/carbon-3B-hybrid-loss-1T-mix2-v1
+MODEL=HuggingFaceBio/Carbon-3B
 
 mkdir -p "$OUT/brca2"
 

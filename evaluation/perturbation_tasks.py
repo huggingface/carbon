@@ -27,7 +27,7 @@ Backends and tag flags work the same way as the other Carbon evals:
 Example:
   python perturbation_tasks.py \
       --task tata_perturbation \
-      --model HuggingFaceBio/carbon-3B-hybrid-loss-1T-mix2-v1 \
+      --model HuggingFaceBio/Carbon-3B \
       --add_dna_tag --bf16
 
   python perturbation_tasks.py \

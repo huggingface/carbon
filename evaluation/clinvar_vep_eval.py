@@ -28,7 +28,7 @@ Backends & flags follow the rest of the evaluation suite:
 Example:
   # Carbon 3B hybrid (flagship, 8 GPUs, 24 kb context)
   python clinvar_vep_eval.py \
-      --model HuggingFaceBio/carbon-3B-hybrid-loss-1T-mix2-v1 \
+      --model HuggingFaceBio/Carbon-3B \
       --add_dna_tag --bf16 --context_length 24000 \
       --output_dir ./results/clinvar
 
