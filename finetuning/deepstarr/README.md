@@ -6,7 +6,7 @@ final validation/test PCC plus log-space PCC for the Dev and Hk targets.
 
 ## What Is Included
 
-- `deepstarr_best_recipe.py`: minimal script for the best 3B recipe.
+- `deepstarr_train.py`: minimal DeepSTARR regression training script.
 - `fsdp2_carbon.yaml`: Accelerate FSDP2 config for Carbon.
 - `deepstarr_regression.slurm`: Slurm template for the minimal recipe.
 
@@ -30,7 +30,7 @@ without running a full experiment:
 accelerate launch \
   --config_file finetuning/deepstarr/fsdp2_carbon.yaml \
   --num_processes 1 \
-  finetuning/deepstarr/deepstarr_best_recipe.py \
+  finetuning/deepstarr/deepstarr_train.py \
   --model hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1 \
   --output_dir scratch/deepstarr/smoke \
   --max_train_samples 256 \
@@ -41,7 +41,7 @@ accelerate launch \
   --per_device_eval_batch_size 2
 ```
 
-## Best 3B Recipe
+## 3B Regression Recipe
 
 The best 3B family of runs used a single GPU, global batch 32, Pearson loss,
 `auto_dna_tags=True`, no weight decay, AdamW with beta2 `0.95`, and validation
@@ -53,10 +53,10 @@ version of that recipe.
 accelerate launch \
   --config_file finetuning/deepstarr/fsdp2_carbon.yaml \
   --num_processes 1 \
-  finetuning/deepstarr/deepstarr_best_recipe.py \
+  finetuning/deepstarr/deepstarr_train.py \
   --model hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1 \
-  --output_dir scratch/deepstarr/carbon-3b-best-recipe \
-  --run_name carbon-3b-best-recipe
+  --output_dir scratch/deepstarr/carbon-3b-regression-train \
+  --run_name carbon-3b-regression-train
 ```
 
 To reproduce the continuation-style run, pass the previous checkpoint:

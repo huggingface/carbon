@@ -14,7 +14,7 @@ SLURM_NNODES="${SLURM_NNODES:-1}"
 NUM_PROCESSES="${NUM_PROCESSES:-$((SLURM_NNODES * GPUS_PER_NODE))}"
 ACCELERATE_CONFIG="${ACCELERATE_CONFIG:-finetuning/deepstarr/fsdp2_carbon.yaml}"
 MODEL="${MODEL:-hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1}"
-RUN_NAME="${RUN_NAME:-carbon-3b-deepstarr-best-recipe}"
+RUN_NAME="${RUN_NAME:-carbon-3b-deepstarr-regression-train}"
 OUTPUT_DIR="${OUTPUT_DIR:-scratch/deepstarr/${RUN_NAME}}"
 
 export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"
@@ -34,7 +34,7 @@ fi
 accelerate launch \
   --config_file "${ACCELERATE_CONFIG}" \
   --num_processes "${NUM_PROCESSES}" \
-  finetuning/deepstarr/deepstarr_best_recipe.py \
+  finetuning/deepstarr/deepstarr_train.py \
   --model "${MODEL}" \
   --output_dir "${OUTPUT_DIR}" \
   --run_name "${RUN_NAME}" \

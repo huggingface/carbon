@@ -1,9 +1,9 @@
-"""Minimal DeepSTARR regression fine-tuning recipe for Carbon.
+"""Minimal DeepSTARR regression fine-tuning script for Carbon.
 
-This is the cleaned-up path for the best Carbon 3B recipe we found:
+The defaults reproduce the strongest Carbon 3B regression setup we found:
 full fine-tuning, sequence-classification regression head, Pearson loss,
-dataset-scaled Dev/Hk labels, auto DNA tags, no weight decay, and frequent
-validation by mean PCC.
+dataset-scaled Dev/Hk labels, auto DNA tags, no weight decay, and validation
+by mean PCC.
 """
 
 from __future__ import annotations
@@ -37,14 +37,14 @@ logger = logging.getLogger(__name__)
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Minimal Carbon DeepSTARR best-recipe fine-tuning"
+        description="Carbon DeepSTARR regression fine-tuning"
     )
     parser.add_argument("--model", default=MODEL_NAME)
     parser.add_argument("--revision", default=None)
     parser.add_argument("--dataset_name", default=DATASET_NAME)
     parser.add_argument(
         "--output_dir",
-        default="scratch/deepstarr/best_recipe_3b",
+        default="scratch/deepstarr/carbon-3b-regression-train",
     )
     parser.add_argument("--run_name", default=None)
     parser.add_argument("--resume_from_checkpoint", default=None)
