@@ -22,9 +22,6 @@ makes reproducibility harder.
 
 ## Models
 
-Current Carbon checkpoints are available in the
-[Carbon checkpoints collection](https://huggingface.co/collections/HuggingFaceBio/carbon-checkpoints).
-
 | Model | Params | Notes |
 |---|---|---|
 | [`HuggingFaceBio/Carbon-500M`](https://huggingface.co/HuggingFaceBio/Carbon-500M) | 500M | Draft model for speculative decoding. |
