@@ -5,11 +5,11 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "carbon"
 version = "0.0.0"
-description = "Dependencies for Carbon model and evaluation workflows"
+description = "Carbon dependencies for model training and evaluation"
 requires-python = ">=3.12,<3.13"
 readme = "README.md"
 dependencies = [
-  "vllm==0.19.0",
+  "vllm==0.19.1",
   "datasets>=4.8.5",
   "accelerate>=1.13.0",
 ]
