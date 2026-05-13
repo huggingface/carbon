@@ -11,16 +11,18 @@
 set -euo pipefail
 source ~/.bashrc
 
-HF_VENV=${HF_VENV:-/fsx/loubna/.venv-2-6-cu124/bin/activate}
-source "$HF_VENV"
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+REPO_ROOT=${REPO_ROOT:-$(cd "$SCRIPT_DIR/../../.." && pwd)}
+cd "$REPO_ROOT"
 
-EVAL=${EVAL_DIR:-/fsx/loubna/projects_v2/carbon/loubna-workspace/release_repos/carbon/evaluation}
+UV_RUN=(uv run --group evaluation)
+
 OUT=$SLURM_SUBMIT_DIR/results/sequence_recovery
 MODEL=HuggingFaceBio/Carbon-3B
 
 mkdir -p "$OUT"
 
-python "$EVAL/sequence_recovery.py" \
+"${UV_RUN[@]}" python "evaluation/sequence_recovery.py" \
     --model "$MODEL" \
     --data_type eukaryote \
     --add_dna_tag --bf16 \

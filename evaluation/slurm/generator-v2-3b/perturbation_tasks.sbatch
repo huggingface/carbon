@@ -13,21 +13,23 @@
 set -euo pipefail
 source ~/.bashrc
 
-HF_VENV=${HF_VENV:-/fsx/loubna/.venv-2-6-cu124/bin/activate}
-source "$HF_VENV"
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+REPO_ROOT=${REPO_ROOT:-$(cd "$SCRIPT_DIR/../../.." && pwd)}
+cd "$REPO_ROOT"
 
-EVAL=${EVAL_DIR:-/fsx/loubna/projects_v2/carbon/loubna-workspace/release_repos/carbon/evaluation}
+UV_RUN=(uv run --group evaluation)
+
 OUT=$SLURM_SUBMIT_DIR/results
 MODEL=GenerTeam/GENERator-v2-eukaryote-3b-base
 
 mkdir -p "$OUT/tata" "$OUT/synonymous_codons"
 
-python "$EVAL/perturbation_tasks.py" \
+"${UV_RUN[@]}" python "evaluation/perturbation_tasks.py" \
     --task tata_perturbation \
     --model "$MODEL" --bf16 \
     --output_dir "$OUT/tata"
 
-python "$EVAL/perturbation_tasks.py" \
+"${UV_RUN[@]}" python "evaluation/perturbation_tasks.py" \
     --task synonymous_codon_substitution \
     --model "$MODEL" --bf16 \
     --output_dir "$OUT/synonymous_codons"

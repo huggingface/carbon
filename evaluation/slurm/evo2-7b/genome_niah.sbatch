@@ -30,15 +30,17 @@
 set -euo pipefail
 source ~/.bashrc
 
-EVO2_VENV=${EVO2_VENV:-/fsx/loubna/projects_v2/.evo2-cu124/bin/activate}
-source "$EVO2_VENV"
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+REPO_ROOT=${REPO_ROOT:-$(cd "$SCRIPT_DIR/../../.." && pwd)}
+cd "$REPO_ROOT"
 
-export CUDA_HOME=/usr/local/cuda-12.4
+UV_RUN=(uv run --group evaluation)
+
+export CUDA_HOME=${CUDA_HOME:-/usr/local/cuda-12.4}
 export HF_HUB_TRUST_REMOTE_CODE=1
-NVIDIA_LIBS=$(python -c "import nvidia.cudnn, os; print(os.path.dirname(nvidia.cudnn.__file__) + '/lib')")
+NVIDIA_LIBS=$("${UV_RUN[@]}" python -c "import nvidia.cudnn, os; print(os.path.dirname(nvidia.cudnn.__file__) + '/lib')")
 export LD_LIBRARY_PATH=${NVIDIA_LIBS}:${LD_LIBRARY_PATH:-}
 
-EVAL=${EVAL_DIR:-/fsx/loubna/projects_v2/carbon/loubna-workspace/release_repos/carbon/evaluation}
 OUT=$SLURM_SUBMIT_DIR/results/genome_niah
 
 MODEL=${MODEL:-evo2_7b}
@@ -53,7 +55,7 @@ mkdir -p "$OUT"
 EXTRA=()
 if [ -n "${POOL:-}" ]; then EXTRA+=(--max_samples "$POOL"); fi
 
-python "$EVAL/genome_niah_eval.py" \
+"${UV_RUN[@]}" python "evaluation/genome_niah_eval.py" \
     --model "$MODEL" --backend evo2 \
     --task "$TASK" --ctx "$CTX" \
     --shard_idx "$SHARD" --n_shards "$NSHARDS" \

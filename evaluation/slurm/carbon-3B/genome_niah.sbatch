@@ -23,10 +23,12 @@
 set -euo pipefail
 source ~/.bashrc
 
-HF_VENV=${HF_VENV:-/fsx/loubna/.venv-2-6-cu124/bin/activate}
-source "$HF_VENV"
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+REPO_ROOT=${REPO_ROOT:-$(cd "$SCRIPT_DIR/../../.." && pwd)}
+cd "$REPO_ROOT"
 
-EVAL=${EVAL_DIR:-/fsx/loubna/projects_v2/carbon/loubna-workspace/release_repos/carbon/evaluation}
+UV_RUN=(uv run --group evaluation)
+
 OUT=$SLURM_SUBMIT_DIR/results/genome_niah
 MODEL=${MODEL:-HuggingFaceBio/carbon-3B-longctx-32k-rope5M}
 TASK=${TASK:-niah}
@@ -34,7 +36,7 @@ CTX=${CTX:-32768}
 
 mkdir -p "$OUT"
 
-python "$EVAL/genome_niah_eval.py" \
+"${UV_RUN[@]}" python "evaluation/genome_niah_eval.py" \
     --model "$MODEL" \
     --task "$TASK" --ctx "$CTX" \
     --add_dna_tag --bf16 \
