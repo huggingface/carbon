@@ -24,10 +24,11 @@ makes reproducibility harder.
 
 | Model | Params | Notes |
 |---|---|---|
-| **[`HuggingFaceBio/carbon-3B`](https://huggingface.co/HuggingFaceBio/carbon-3B-hybrid-loss-1T-mix2-v1)** | 3B | **Flagship.** Matches or beats Evo2 7B. |
-| [`HuggingFaceBio/carbon-8B`](https://huggingface.co/HuggingFaceBio/carbon-8B-hybrid-loss-1T-v1) | 8B | Larger model for more performance. |
+| [`HuggingFaceBio/Carbon-500M`](https://huggingface.co/HuggingFaceBio/Carbon-500M) | 500M | Draft model for speculative decoding. |
+| **[`HuggingFaceBio/Carbon-3B`](https://huggingface.co/HuggingFaceBio/Carbon-3B)** | 3B | **Flagship.** Matches or beats Evo2 7B. |
+| [`HuggingFaceBio/Carbon-8B`](https://huggingface.co/HuggingFaceBio/Carbon-8B) | 8B | Larger model for more performance. |
 
-Both checkpoints use a **hybrid tokenizer**: BPE for English text and 6-mer
+The Carbon checkpoints use a **hybrid tokenizer**: BPE for English text and 6-mer
 for DNA, switched by a `<dna>` tag mid-sequence. That's why every inference
 or eval snippet below wraps DNA inputs with `<dna>` — see
 [evaluation/README.md](evaluation/README.md) for the full DNA-tag explanation.
@@ -39,7 +40,7 @@ TODO: add this behavior in tokenizer by default?
 ```python
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-model_id = "HuggingFaceBio/carbon-3B-hybrid-loss-1T-mix2-v1"
+model_id = "HuggingFaceBio/Carbon-3B"
 tok = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
 model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True,
                                              torch_dtype="bfloat16").to("cuda")
