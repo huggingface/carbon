@@ -9,27 +9,17 @@ This directory contains task-specific fine-tuning recipes for Carbon models.
 
 ## DeepSTARR
 
-The DeepSTARR recipe includes the regression trainer, FSDP2 config, Trackio
-logging, and Slurm launch template used for Carbon 3B/8B enhancer activity
-fine-tuning.
+The DeepSTARR recipe includes a minimal best-recipe script, the full
+experimental trainer, FSDP2 config, and Slurm launch template used for Carbon
+3B/8B enhancer activity fine-tuning.
 
 ```sh
 accelerate launch \
   --config_file finetuning/deepstarr/fsdp2_carbon.yaml \
-  --num_processes 8 \
-  finetuning/deepstarr/deepstarr_regression_train.py \
+  --num_processes 1 \
+  finetuning/deepstarr/deepstarr_best_recipe.py \
   --model hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1 \
-  --output_dir scratch/deepstarr/carbon-3b-full-ft \
-  --finetune_mode full_finetune \
-  --learning_rate 2e-5 \
-  --weight_decay 0.0 \
-  --loss_type pearson \
-  --dna_tokenization_mode auto_dna_tags \
-  --truncate_dna_to_multiple 6 \
-  --torch_dtype float32 \
-  --bf16 \
-  --require_fp32_master_weights \
-  --gradient_checkpointing
+  --output_dir scratch/deepstarr/carbon-3b-best-recipe
 ```
 
 See [`deepstarr/README.md`](deepstarr/README.md) for the full launch notes.

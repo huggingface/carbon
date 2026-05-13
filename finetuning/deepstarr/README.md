@@ -6,16 +6,11 @@ final validation/test PCC plus log-space PCC for the Dev and Hk targets.
 
 ## What Is Included
 
-- Full fine-tuning and frozen-LM modes.
-- FSDP2 launch config for Carbon 3B/8B.
-- Direct Trackio logging because `Trainer` does not support Trackio natively.
-- Carbon tokenizer options: explicit `<dna>...</dna>` tags, `auto_dna_tags=True`,
-  and truncation to multiples of 6 to avoid tail k-mer padding.
-- Regression losses: `mse`, `huber`, `pearson`, `mse_pearson`, `ccc`,
-  `mse_ccc`, and `pearson_calibrated`.
-- Categorical target-bin mode.
-- Train-only augmentations: Carbon k-mer phase jitter, reverse complement
-  views, and DNA 6-mer token masking.
+- `deepstarr_best_recipe.py`: minimal script for the best 3B recipe.
+- `deepstarr_regression_train.py`: full experimental trainer with extra losses,
+  frozen-LM mode, Trackio logging, augmentations, and categorical heads.
+- `fsdp2_carbon.yaml`: Accelerate FSDP2 config for Carbon.
+- `deepstarr_regression.slurm`: Slurm template for the full trainer.
 
 ## Environment
 
@@ -40,80 +35,49 @@ metric writing without running a full experiment:
 accelerate launch \
   --config_file finetuning/deepstarr/fsdp2_carbon.yaml \
   --num_processes 1 \
-  finetuning/deepstarr/deepstarr_regression_train.py \
+  finetuning/deepstarr/deepstarr_best_recipe.py \
   --model hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1 \
   --output_dir scratch/deepstarr/smoke \
-  --finetune_mode full_finetune \
-  --learning_rate 2e-5 \
-  --weight_decay 0.0 \
-  --loss_type pearson \
-  --dna_tokenization_mode auto_dna_tags \
-  --truncate_dna_to_multiple 6 \
   --max_train_samples 256 \
   --max_eval_samples 128 \
   --max_steps 10 \
-  --eval_strategy steps \
-  --save_strategy steps \
   --eval_steps 5 \
-  --save_steps 5 \
   --per_device_train_batch_size 1 \
-  --per_device_eval_batch_size 2 \
-  --torch_dtype float32 \
-  --bf16 \
-  --require_fp32_master_weights \
-  --gradient_checkpointing \
-  --attn_implementation kernels-community/flash-attn3 \
-  --disable_trackio
+  --per_device_eval_batch_size 2
 ```
 
-## Main 3B Run
+## Best 3B Recipe
+
+The best 3B family of runs used a single GPU, global batch 32, Pearson loss,
+`auto_dna_tags=True`, no weight decay, AdamW with beta2 `0.95`, and validation
+every about 0.1 epoch. The best observed checkpoint came from continuing a
+1.5-epoch run to 2.5 total epochs; the command below is the clean single-stage
+version of that recipe.
 
 ```sh
-export TRACKIO_SPACE_ID=hf-carbon/deepstarr-regression
-
 accelerate launch \
   --config_file finetuning/deepstarr/fsdp2_carbon.yaml \
-  --num_processes 8 \
-  finetuning/deepstarr/deepstarr_regression_train.py \
+  --num_processes 1 \
+  finetuning/deepstarr/deepstarr_best_recipe.py \
   --model hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1 \
-  --output_dir scratch/deepstarr/carbon-3b-full-ft \
-  --run_name carbon-3b-full-ft \
-  --trackio_run_name carbon-3b-full-ft \
-  --trackio_group carbon-3b \
-  --finetune_mode full_finetune \
-  --learning_rate 2e-5 \
-  --weight_decay 0.0 \
-  --warmup_ratio 0.05 \
-  --lr_scheduler_type cosine \
-  --loss_type pearson \
-  --label_transform dataset_scaled \
-  --head_type sequence \
-  --dna_tokenization_mode auto_dna_tags \
-  --truncate_dna_to_multiple 6 \
-  --max_length 512 \
-  --num_train_epochs 5 \
-  --eval_strategy steps \
-  --save_strategy steps \
-  --eval_steps 8555 \
-  --save_steps 8555 \
-  --per_device_train_batch_size 4 \
-  --per_device_eval_batch_size 8 \
-  --gradient_accumulation_steps 1 \
-  --torch_dtype float32 \
-  --bf16 \
-  --require_fp32_master_weights \
-  --gradient_checkpointing \
-  --attn_implementation kernels-community/flash-attn3 \
-  --trackio
+  --output_dir scratch/deepstarr/carbon-3b-best-recipe \
+  --run_name carbon-3b-best-recipe
 ```
 
-For the 8B model, change `--model` to `hf-carbon/carbon-8B-hybrid-loss-1T-v1`
-and reduce batch size if needed.
+To reproduce the continuation-style run, pass the previous checkpoint:
+
+```sh
+--resume_from_checkpoint scratch/deepstarr/previous-run/checkpoint-18858
+```
+
+The minimal script intentionally leaves out Trackio and experimental knobs. Use
+`deepstarr_regression_train.py` for the larger scan surface.
 
 ## Slurm
 
 The Slurm template uses the same defaults as the main run and lets you override
-the common knobs with environment variables:
+the common knobs with environment variables. It targets
+`deepstarr_regression_train.py`, not the minimal best-recipe script.
 
 ```sh
 TRACKIO_SPACE_ID=hf-carbon/deepstarr-regression \
@@ -124,6 +88,8 @@ sbatch finetuning/deepstarr/deepstarr_regression.slurm
 ```
 
 ## Useful Variants
+
+The following options are available in `deepstarr_regression_train.py`.
 
 Frozen LM:
 
@@ -160,14 +126,18 @@ Warm start from a previous checkpoint while resetting optimizer/scheduler state:
 
 ## Outputs
 
-Each run writes:
+The minimal best-recipe script writes:
 
 - `run_config.json`
 - `train_results.json`
 - `validation_metrics.json`
 - `test_metrics.json`
+- Trainer checkpoints, with the best checkpoint selected by validation PCC
+- `best_model/` only when `--save_final_model` is enabled
+
+The full experimental script can also write:
+
 - `validation_predictions.jsonl` and `test_predictions.jsonl`
-- `best_model/` when `--save_final_model` is enabled
 
 The primary model-selection metric is `pcc_mean`. The full metric files also
 include `*_pcc_dev_scaled`, `*_pcc_hk_scaled`, `*_log_pcc_dev`,
