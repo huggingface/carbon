@@ -9,12 +9,12 @@ single-nucleotide variants and reports AUROC of the LL delta.
   tata_perturbation:
     Disrupt TATA-box motifs in promoters with random substitutions. The model
     should score the intact promoter higher than the perturbed one.
-    Dataset: hf-carbon/carbon-perturbation-bench  cols: original_sequence (real), sequence (perturbed)
+    Dataset: HuggingFaceBio/carbon-perturbation-bench  cols: original_sequence (real), sequence (perturbed)
 
   synonymous_codon_substitution:
     Replace codons in a CDS with synonyms encoding the same amino acid. The
     real codon usage should be preferred over the synonymous variant.
-    Dataset: hf-carbon/carbon-perturbation-bench  cols: original_sequence (real), sequence (synonymous)
+    Dataset: HuggingFaceBio/carbon-perturbation-bench  cols: original_sequence (real), sequence (synonymous)
 
 Metric: pairwise discrimination accuracy = mean(LL(real) > LL(perturbed)).
 
@@ -27,7 +27,7 @@ Backends and tag flags work the same way as the other Carbon evals:
 Example:
   python perturbation_tasks.py \
       --task tata_perturbation \
-      --model hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1 \
+      --model HuggingFaceBio/Carbon-3B \
       --add_dna_tag --bf16
 
   python perturbation_tasks.py \
@@ -48,7 +48,7 @@ from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 # pos_col (real, unperturbed) and neg_col (perturbed) for each task,
-# plus the matching subset name in hf-carbon/carbon-perturbation-bench.
+# plus the matching subset name in HuggingFaceBio/carbon-perturbation-bench.
 TASKS = {
     "tata_perturbation":             {"pos": "original_sequence", "neg": "sequence", "subset": "tata"},
     "synonymous_codon_substitution": {"pos": "original_sequence", "neg": "sequence", "subset": "synonymous_codons"},
@@ -61,7 +61,7 @@ def parse_args():
     p.add_argument("--model", required=True, help="HF repo / local path / evo2 model name")
     p.add_argument("--revision", default=None)
     p.add_argument("--backend", choices=["hf", "evo2"], default="hf")
-    p.add_argument("--dataset", default="hf-carbon/carbon-perturbation-bench")
+    p.add_argument("--dataset", default="HuggingFaceBio/carbon-perturbation-bench")
     p.add_argument("--subset", default=None,
                    help="HF dataset config. Defaults to the per-task subset "
                         "(`tata` / `synonymous_codons`).")

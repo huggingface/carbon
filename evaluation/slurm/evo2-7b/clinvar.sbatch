@@ -31,12 +31,12 @@ mkdir -p "$OUT/coding" "$OUT/non_coding"
 
 python "$EVAL/clinvar_vep_eval.py" \
     --model evo2_7b_base --backend evo2 \
-    --clinvar_path hf://datasets/hf-carbon/clinvar-vep-final/coding/clinvar_coding.parquet \
+    --clinvar_path hf://datasets/HuggingFaceBio/clinvar-vep-final/coding/clinvar_coding.parquet \
     --bf16 --context_length "$CONTEXT_LENGTH" \
     --output_dir "$OUT/coding"
 
 python "$EVAL/clinvar_vep_eval.py" \
     --model evo2_7b_base --backend evo2 \
-    --clinvar_path hf://datasets/hf-carbon/clinvar-vep-final/non_coding/clinvar_non_coding.parquet \
+    --clinvar_path hf://datasets/HuggingFaceBio/clinvar-vep-final/non_coding/clinvar_non_coding.parquet \
     --bf16 --context_length "$CONTEXT_LENGTH" \
     --output_dir "$OUT/non_coding"

@@ -45,8 +45,8 @@ Dataset: `InstaDeepAI/nucleotide_transformer_downstream_tasks`, config
 Single GPU:
 
 ```sh
-python finetuning/finetune_promoter.py \
-    --model hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1 \
+python finetune_promoter.py \
+    --model HuggingFaceBio/Carbon-3B \
     --add_dna_tag \
     --output_dir ./outputs/promoter-carbon-3B
 ```
@@ -54,8 +54,8 @@ python finetuning/finetune_promoter.py \
 Multi-GPU with `torchrun`:
 
 ```sh
-torchrun --nproc_per_node=8 finetuning/finetune_promoter.py \
-    --model hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1 \
+torchrun --nproc_per_node=8 finetune_promoter.py \
+    --model HuggingFaceBio/Carbon-3B \
     --add_dna_tag \
     --batch_size 4 --grad_accum 4 \
     --output_dir ./outputs/promoter-carbon-3B

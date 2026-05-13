@@ -2,7 +2,7 @@
 
 Genomic foundation models from Hugging Face. Carbon is a family of causal
 language models trained on **1T tokens of DNA / 6T DNA base pairs** from the
-[Carbon Pretraining Corpus](https://huggingface.co/datasets/hf-carbon/carbon-pretraining-corpus),
+[Carbon Pretraining Corpus](https://huggingface.co/datasets/HuggingFaceBio/carbon-pretraining-corpus),
 a curated mix of DNA & RNA sequences.
 
 This repo contains the eval code for Carbon tasks: sequence recovery, variant
@@ -24,10 +24,11 @@ makes reproducibility harder.
 
 | Model | Params | Notes |
 |---|---|---|
-| **[`hf-carbon/carbon-3B`](https://huggingface.co/hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1)** | 3B | **Flagship.** Matches or beats Evo2 7B. |
-| [`hf-carbon/carbon-8B`](https://huggingface.co/hf-carbon/carbon-8B-hybrid-loss-1T-v1) | 8B | Larger model for more performance. |
+| [`HuggingFaceBio/Carbon-500M`](https://huggingface.co/HuggingFaceBio/Carbon-500M) | 500M | Draft model for speculative decoding. |
+| **[`HuggingFaceBio/Carbon-3B`](https://huggingface.co/HuggingFaceBio/Carbon-3B)** | 3B | **Flagship.** Matches or beats Evo2 7B. |
+| [`HuggingFaceBio/Carbon-8B`](https://huggingface.co/HuggingFaceBio/Carbon-8B) | 8B | Larger model for more performance. |
 
-Both checkpoints use a **hybrid tokenizer**: BPE for English text and 6-mer
+The Carbon checkpoints use a **hybrid tokenizer**: BPE for English text and 6-mer
 for DNA, switched by a `<dna>` tag mid-sequence. That's why every inference
 or eval snippet below wraps DNA inputs with `<dna>` — see
 [evaluation/README.md](evaluation/README.md) for the full DNA-tag explanation.
@@ -39,7 +40,7 @@ TODO: add this behavior in tokenizer by default?
 ```python
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-model_id = "hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1"
+model_id = "HuggingFaceBio/Carbon-3B"
 tok = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
 model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True,
                                              torch_dtype="bfloat16").to("cuda")
@@ -61,7 +62,7 @@ the log-likelihood — see [`evaluation/vep_eval.py`](evaluation/vep_eval.py).
 ### Training data
 
 Carbon was trained on **1 T tokens (≈ 6 T DNA base pairs)** drawn from the
-[Carbon Pretraining Corpus](https://huggingface.co/datasets/hf-carbon/carbon-pretraining-corpus) mix of:
+[Carbon Pretraining Corpus](https://huggingface.co/datasets/HuggingFaceBio/carbon-pretraining-corpus) mix of:
 
 - **Eukaryote genes** (animals, plants, fungi, protists) — functional genomic regions, extracted from refSeq from Generator training mix.
 - **mRNA transcripts** — processed, spliced mRNA from OpenGenome2.
@@ -85,7 +86,7 @@ The fork adds:
 ## Evaluation
 
 This repo ships a **suite of seven zero-shot DNA evaluations** with
-reproducible code. The benchmark datasets are available in this [collection](https://huggingface.co/collections/hf-carbon/dna-benchmarks).
+reproducible code. The benchmark datasets are available in this [collection](https://huggingface.co/collections/HuggingFaceBio/dna-benchmarks).
 
 The suite covers four modes of zero-shot evaluation:
 
@@ -110,7 +111,7 @@ comparable across model families.
 | **Synonymous codon substitution** | Replace codons with synonyms encoding the same amino acid; the model should prefer native codon usage. Probes coding-region structure. | [`perturbation_tasks.py`](evaluation/perturbation_tasks.py) `--task synonymous_codon_substitution` |
 | **BRCA2 VEP** | Zero-shot VEP on saturation-mutagenesis BRCA2 ([Huang 2025](https://www.nature.com/articles/s41586-024-08388-8)). Centered 8 kb window + full-LL delta. | [`vep_eval.py`](evaluation/vep_eval.py) |
 | **TraitGym Mendelian** | 3,380 fine-mapped non-coding regulatory variants for 113 Mendelian diseases ([Benegas et al. 2025](https://www.biorxiv.org/content/10.1101/2025.02.11.637758v1)). Centered 8 kb window + full-LL delta. | [`vep_eval.py`](evaluation/vep_eval.py) |
-| **ClinVar** | Pathogenic vs benign on curated coding + noncoding ClinVar variants. Right-end / next-token scoring with 24 kb left context. | [`clinvar_vep_eval.py`](evaluation/clinvar_vep_eval.py) (uses [`hf-carbon/clinvar-vep-final`](https://huggingface.co/datasets/hf-carbon/clinvar-vep-final) directly) |
+| **ClinVar** | Pathogenic vs benign on curated coding + noncoding ClinVar variants. Right-end / next-token scoring with 24 kb left context. | [`clinvar_vep_eval.py`](evaluation/clinvar_vep_eval.py) (uses [`HuggingFaceBio/clinvar-vep-final`](https://huggingface.co/datasets/HuggingFaceBio/clinvar-vep-final) directly) |
 | **Genome-NIAH** | Long-context retrieval: insert a (key, value) pair in a real-genome haystack, ask the model to retrieve the value. Four tasks × six context lengths (up to 786 kbp). | [`genome_niah_eval.py`](evaluation/genome_niah_eval.py) |
 
 See [`evaluation/README.md`](evaluation/README.md) for run commands, DNA-tag
@@ -139,7 +140,7 @@ bacterial sequences.
   title  = {Carbon: Genomic foundation models},
   author = {Hugging Face},
   year   = {2026},
-  url    = {https://huggingface.co/hf-carbon}
+  url    = {https://huggingface.co/HuggingFaceBio}
 }
 ```
 
