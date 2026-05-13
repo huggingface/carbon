@@ -89,6 +89,37 @@ python sequence_recovery.py \
     --data_type eukaryote --gen_len_bp 30 --bf16
 ```
 
+### Long-rollout Sequence Recovery sweeps
+
+For base-pair rollouts across Carbon/Evo2 backends, use the SR sweep wrapper.
+When `USE_EVO2=true`, the launcher maps each HF-style `GEN_LEN` point to
+`GEN_LEN * BP_PER_TOKEN` generated base pairs unless `GEN_LEN_BP` is explicitly
+set.
+
+```sh
+MODEL=evo2_7b \
+MODEL_NAME=Evo2-7B \
+USE_EVO2=true \
+BATCH_SIZE=1 \
+GEN_LENS="5 10 20 40 80 160 320 640 1280 2560" \
+ACCURACY_MODE=prediction_length \
+BASE_OUTPUT_DIR=./eval_results/sequence_recovery_long_rollouts_pow2 \
+evaluation/submit_sequence_recovery_gen_len_sweep.sh
+```
+
+Plot a completed sweep with Carbon and Evo2 curves:
+
+```sh
+uv run --project evaluation python evaluation/scripts/plot_sequence_recovery_sweep.py \
+  --base_dir ./eval_results/sequence_recovery_long_rollouts_pow2 \
+  --data_type eukaryote \
+  --model "3B hybrid (HF)=Carbon-3B-600B-dna-generv2-fp32-lmhead" \
+  --model "8B hybrid (HF)=Carbon-8B-600B-dna-fp32-lmhead" \
+  --model "Evo2 7B=Evo2-7B" \
+  --out scratch/plots/sequence_recovery_sweep_overall.png \
+  --type_panels scratch/plots/sequence_recovery_sweep_types.png
+```
+
 ## 2. BRCA2, TraitGym Mendelian VEP
 
 We use the [Evo2](https://www.biorxiv.org/content/10.1101/2025.02.18.638918v1)
