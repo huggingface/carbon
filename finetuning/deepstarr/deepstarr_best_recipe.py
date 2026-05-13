@@ -4,10 +4,6 @@ This is the cleaned-up path for the best Carbon 3B recipe we found:
 full fine-tuning, sequence-classification regression head, Pearson loss,
 dataset-scaled Dev/Hk labels, auto DNA tags, no weight decay, and frequent
 validation by mean PCC.
-
-For the full experimental matrix with augmentations, alternate losses, frozen
-LM mode, Trackio logging, and categorical heads, use
-`deepstarr_regression_train.py`.
 """
 
 from __future__ import annotations

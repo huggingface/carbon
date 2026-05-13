@@ -9,9 +9,8 @@ This directory contains task-specific fine-tuning recipes for Carbon models.
 
 ## DeepSTARR
 
-The DeepSTARR recipe includes a minimal best-recipe script, the full
-experimental trainer, FSDP2 config, and Slurm launch template used for Carbon
-3B/8B enhancer activity fine-tuning.
+The DeepSTARR recipe includes a minimal best-recipe script, FSDP2 config, and
+Slurm launch template used for Carbon 3B enhancer activity fine-tuning.
 
 ```sh
 accelerate launch \
