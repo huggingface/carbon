@@ -15,6 +15,7 @@ makes reproducibility harder.
 ## Contents
 
 - [Models](#models)
+- [Installation](#installation)
 - [Inference](#inference)
 - [Pretraining](#pretraining)
 - [Evaluation](#evaluation)
@@ -34,6 +35,20 @@ or eval snippet below wraps DNA inputs with `<dna>` — see
 [evaluation/README.md](evaluation/README.md) for the full DNA-tag explanation.
 
 TODO: add this behavior in tokenizer by default?
+
+## Installation
+
+Install the core runtime dependencies with:
+
+```bash
+uv sync
+```
+
+To include evaluation dependencies, run:
+
+```bash
+uv sync --group evaluation
+```
 
 ## Inference
 
