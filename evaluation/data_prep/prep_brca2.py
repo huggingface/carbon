@@ -14,7 +14,7 @@ Output schema (what vep_eval.py reads):
 
 Usage:
   python prep_brca2.py --output_path /tmp/brca2_vep.parquet
-  python prep_brca2.py --push_to_hub --hub_repo_id hf-carbon/brca2-vep
+  python prep_brca2.py --push_to_hub --hub_repo_id HuggingFaceBio/brca2-vep
 """
 
 import argparse
@@ -42,7 +42,7 @@ def parse_args():
     p.add_argument("--cache_dir", default="./brca2_cache")
     p.add_argument("--output_path", default="./brca2_cache/brca2_vep.parquet")
     p.add_argument("--push_to_hub", action="store_true")
-    p.add_argument("--hub_repo_id", default="hf-carbon/brca2-vep")
+    p.add_argument("--hub_repo_id", default="HuggingFaceBio/brca2-vep")
     return p.parse_args()
 
 

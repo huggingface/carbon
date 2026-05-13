@@ -59,7 +59,7 @@ natively.
 
 | Model | Flag |
 |---|---|
-| Carbon hybrid (`carbon-3B-hybrid-loss-1T-mix2-v1`, `carbon-8B-hybrid-loss-1T-v1`) | `--add_dna_tag` |
+| Carbon hybrid (`Carbon-3B`, `carbon-8B-hybrid-loss-1T-v1`) | `--add_dna_tag` |
 | Carbon pure-DNA (`carbon-3B-pure-dna-*`) | `--add_bos` (sequence-recovery only; uses `<s>`) |
 | GENERator (`GenerTeam/GENERator-*`) | _(no flag — raw DNA)_ |
 | Evo2 (`evo2_1b_base`, `evo2_7b_base`, ...) | `--backend evo2` |
@@ -75,7 +75,7 @@ Dataset: [`GenerTeam/sequence-recovery`](https://huggingface.co/datasets/GenerTe
 ```bash
 # Carbon 3B hybrid (flagship)
 python sequence_recovery.py \
-    --model hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1 \
+    --model HuggingFaceBio/Carbon-3B \
     --data_type eukaryote --add_dna_tag --bf16
 
 # GENERator
@@ -152,28 +152,28 @@ then point `--data_path` at it.
 
 | Dataset | Source | Hub | n | Window |
 |---|---|---|---|---|
-| **BRCA2** | [Huang et al. 2025, Nature](https://www.nature.com/articles/s41586-024-08388-8) (DBD ACMG classes) | `hf-carbon/brca2-vep` | 6,836 SNVs (1,156 LOF + 5,680 FUNC/INT) | chr13 hg19 |
-| **TraitGym Mendelian** | [Benegas, Eraslan & Song 2025](https://www.biorxiv.org/content/10.1101/2025.02.11.637758v1) — **non-coding regulatory variants** for 113 Mendelian diseases | `hf-carbon/traitgym` | 3,380 variants (338 causal + 3,042 matched controls) | hg38, all chromosomes |
+| **BRCA2** | [Huang et al. 2025, Nature](https://www.nature.com/articles/s41586-024-08388-8) (DBD ACMG classes) | `HuggingFaceBio/brca2-vep` | 6,836 SNVs (1,156 LOF + 5,680 FUNC/INT) | chr13 hg19 |
+| **TraitGym Mendelian** | [Benegas, Eraslan & Song 2025](https://www.biorxiv.org/content/10.1101/2025.02.11.637758v1) — **non-coding regulatory variants** for 113 Mendelian diseases | `HuggingFaceBio/traitgym` | 3,380 variants (338 causal + 3,042 matched controls) | hg38, all chromosomes |
 
 ```bash
 # Carbon 3B hybrid · BRCA2 (8 GPUs)
 python vep_eval.py \
-    --model hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1 \
-    --data_path hf://datasets/hf-carbon/brca2-vep/brca2_vep.parquet \
+    --model HuggingFaceBio/Carbon-3B \
+    --data_path hf://datasets/HuggingFaceBio/brca2-vep/brca2_vep.parquet \
     --add_dna_tag --bf16 \
     --output_dir ./results/brca2_vep
 
 # TraitGym Mendelian — pass --rev_comp_avg, variants can sit on either strand
 python vep_eval.py \
-    --model hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1 \
-    --data_path hf://datasets/hf-carbon/traitgym/mendelian_traits_vep.parquet \
+    --model HuggingFaceBio/Carbon-3B \
+    --data_path hf://datasets/HuggingFaceBio/traitgym/mendelian_traits_vep.parquet \
     --add_dna_tag --bf16 --rev_comp_avg \
     --output_dir ./results/traitgym_mendelian
 
 # Evo2 7B (1 GPU)
 python vep_eval.py \
     --model evo2_7b_base --backend evo2 \
-    --data_path hf://datasets/hf-carbon/brca2-vep/brca2_vep.parquet \
+    --data_path hf://datasets/HuggingFaceBio/brca2-vep/brca2_vep.parquet \
     --bf16 --output_dir ./results/brca2_vep_evo2
 ```
 
@@ -187,7 +187,7 @@ base is the ref / alt nucleotide to get `P(ref)` and `P(alt)`. Score is
 `log(P(ref) / P(alt))` — higher when the alt is more surprising. AUROC of
 score vs `label == 1`.
 
-Dataset: [`hf-carbon/clinvar-vep-final`](https://huggingface.co/datasets/hf-carbon/clinvar-vep-final).
+Dataset: [`HuggingFaceBio/clinvar-vep-final`](https://huggingface.co/datasets/HuggingFaceBio/clinvar-vep-final).
 This is the GenerTeam ClinVar release (mostly coding) augmented with a
 Carbon-curated noncoding split, since GenerTeam's release is ~99 % coding and
 we wanted balanced coverage. Schema: `chrom, pos, ref, alt, label, region,
@@ -197,7 +197,7 @@ per-breakdown AUROC / AUPRC automatically.
 ```bash
 # Carbon 3B hybrid (flagship, 8 GPUs, 24 kbp context)
 python clinvar_vep_eval.py \
-    --model hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1 \
+    --model HuggingFaceBio/Carbon-3B \
     --add_dna_tag --bf16 --context_length 24000 \
     --output_dir ./results/clinvar
 
@@ -222,20 +222,20 @@ version. Distinct from VEP, which probes single-nucleotide changes.
   encoding the same amino acid. A model that has learned codon-usage bias
   should prefer the native codon usage over the synonymous variant.
 
-Dataset: [`hf-carbon/carbon_tasks`](https://huggingface.co/datasets/hf-carbon/carbon_tasks)
+Dataset: [`HuggingFaceBio/carbon_tasks`](https://huggingface.co/datasets/HuggingFaceBio/carbon_tasks)
 (columns `original_sequence` = real, `sequence` = perturbed)
 
 ```bash
 # Carbon 3B hybrid · TATA
 python perturbation_tasks.py \
     --task tata_perturbation \
-    --model hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1 \
+    --model HuggingFaceBio/Carbon-3B \
     --add_dna_tag --bf16
 
 # Carbon 3B hybrid · synonymous codons
 python perturbation_tasks.py \
     --task synonymous_codon_substitution \
-    --model hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1 \
+    --model HuggingFaceBio/Carbon-3B \
     --add_dna_tag --bf16
 
 # Evo2 7B
@@ -270,7 +270,7 @@ Six context lengths (`--ctx`, given in **6-mer tokens** — Carbon's native toke
 | 65536  | 393 kbp | stitched |
 | 131072 | 786 kbp | stitched |
 
-Dataset is `hf-carbon/genome-niah` (auto-loaded). Each (task, ctx) cell has
+Dataset is `HuggingFaceBio/genome-niah` (auto-loaded). Each (task, ctx) cell has
 n=500 rows by default. Pass `--max_samples N` for quick smoke tests.
 
 **Metrics.** **The default / headline metric is `gen_exact_match`** — that's the number we report in tables, the one users should compare against. The other two are auxiliary diagnostics, written to the same JSON for convenience but not the primary score.
@@ -286,7 +286,7 @@ Each model is evaluated up to its native context (with optional yarn4× extensio
 ```bash
 # Carbon-3B-lc32k at native 32 k (4 k / 8 k / 16 k / 32 k)
 python genome_niah_eval.py \
-    --model hf-carbon/carbon-3B-longctx-32k-rope5M \
+    --model HuggingFaceBio/carbon-3B-longctx-32k-rope5M \
     --task niah --ctx 32768 --add_dna_tag --bf16
 
 # GENERator-v2 3B at native 16 k (4 k / 8 k / 16 k)

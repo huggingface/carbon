@@ -17,7 +17,7 @@ GENERator paper. This is *different* from the BRCA / TraitGym recipe in
     5. Score = log(P(ref) / P(alt)) — higher when the alt is more surprising
        (i.e. the variant is pathogenic). AUROC of score vs label==1.
 
-Dataset: `hf-carbon/clinvar-vep-final` (GenerTeam coding ClinVar + Carbon's
+Dataset: `HuggingFaceBio/clinvar-vep-final` (GenerTeam coding ClinVar + Carbon's
 extra noncoding curation, since GenerTeam's release is ~99% coding).
 
 Backends & flags follow the rest of the evaluation suite:
@@ -28,7 +28,7 @@ Backends & flags follow the rest of the evaluation suite:
 Example:
   # Carbon 3B hybrid (flagship, 8 GPUs, 24 kb context)
   python clinvar_vep_eval.py \
-      --model hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1 \
+      --model HuggingFaceBio/Carbon-3B \
       --add_dna_tag --bf16 --context_length 24000 \
       --output_dir ./results/clinvar
 
@@ -54,7 +54,7 @@ from tqdm import tqdm
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
 DEFAULT_HG38 = "hf://datasets/GenerTeam/variant-effect-prediction/hg38.parquet"
-DEFAULT_CLINVAR = "hf://datasets/hf-carbon/clinvar-vep-final/clinvar_vep_final.parquet"
+DEFAULT_CLINVAR = "hf://datasets/HuggingFaceBio/clinvar-vep-final/clinvar_vep_final.parquet"
 
 
 def parse_args():

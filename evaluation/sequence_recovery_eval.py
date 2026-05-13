@@ -2,7 +2,7 @@
 Usage:
   Legacy fixed-window scoring (preserves the original --gen_len 5 metric):
     uv run --project evaluation python evaluation/sequence_recovery_eval.py \
-      --model hf-carbon/carbon-3B-600B-dna-generv2-fp32-lmhead \
+      --model HuggingFaceBio/carbon-3B-600B-dna-generv2-fp32-lmhead \
       --model_name 3B-WITH-TAGS \
       --data_type eukaryote \
       --data_path hf://datasets/GenerTeam/sequence-recovery \
@@ -16,7 +16,7 @@ Usage:
 
   Long-rollout scoring (scores the generated window and derives a tail label when needed):
     uv run --project evaluation python evaluation/sequence_recovery_eval.py \
-      --model hf-carbon/carbon-3B-600B-dna-generv2-fp32-lmhead \
+      --model HuggingFaceBio/carbon-3B-600B-dna-generv2-fp32-lmhead \
       --model_name 3B-WITH-TAGS \
       --data_type eukaryote \
       --data_path hf://datasets/GenerTeam/sequence-recovery \
@@ -248,7 +248,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--hub_repo_id",
         default=None,
-        help="HF repo to upload results (e.g., hf-carbon/seq-recovery-results)",
+        help="HF repo to upload results (e.g., HuggingFaceBio/seq-recovery-results)",
     )
     parser.add_argument(
         "--hub_repo_type",

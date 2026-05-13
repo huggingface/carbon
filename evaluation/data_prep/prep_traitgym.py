@@ -15,7 +15,7 @@ Output schema (matches vep_eval.py):
   chrom, pos, ref, alt, label (0/1), class ("LOF"/"FUNC/INT"), consequence,
   score (PIP for complex traits; None for mendelian), ref_seq, var_seq
 
-Hub: hf-carbon/traitgym  (one repo, two parquets: mendelian_traits_vep, complex_traits_vep)
+Hub: HuggingFaceBio/traitgym  (one repo, two parquets: mendelian_traits_vep, complex_traits_vep)
 
 Usage:
   python prep_traitgym.py --config mendelian_traits
@@ -46,7 +46,7 @@ def parse_args():
     p.add_argument("--output_path", default=None,
                    help="Defaults to {cache_dir}/{config}_vep.parquet")
     p.add_argument("--push_to_hub", action="store_true")
-    p.add_argument("--hub_repo_id", default="hf-carbon/traitgym")
+    p.add_argument("--hub_repo_id", default="HuggingFaceBio/traitgym")
     return p.parse_args()
 
 

@@ -22,6 +22,6 @@ mkdir -p "$OUT"
 
 python "$EVAL/vep_eval.py" \
     --model "$MODEL" \
-    --data_path hf://datasets/hf-carbon/traitgym/mendelian_traits_vep.parquet \
+    --data_path hf://datasets/HuggingFaceBio/traitgym/mendelian_traits_vep.parquet \
     --bf16 --rev_comp_avg \
     --output_dir "$OUT"

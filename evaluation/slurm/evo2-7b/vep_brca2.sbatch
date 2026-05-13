@@ -27,6 +27,6 @@ mkdir -p "$OUT/brca2"
 
 python "$EVAL/vep_eval.py" \
     --model evo2_7b_base --backend evo2 \
-    --data_path hf://datasets/hf-carbon/brca2-vep/brca2_vep.parquet \
+    --data_path hf://datasets/HuggingFaceBio/brca2-vep/brca2_vep.parquet \
     --bf16 \
     --output_dir "$OUT/brca2"

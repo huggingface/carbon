@@ -36,12 +36,12 @@ Metrics reported:
 Examples:
   # Carbon-lc32k native, 32 k native context
   python genome_niah_eval.py \\
-      --model hf-carbon/carbon-3B-longctx-32k-rope5M \\
+      --model HuggingFaceBio/carbon-3B-longctx-32k-rope5M \\
       --task niah --ctx 32768 --add_dna_tag --bf16
 
   # Carbon-lc32k + YaRN-4× extrapolated to 64k
   python genome_niah_eval.py \\
-      --model hf-carbon/carbon-3B-longctx-32k-rope5M-yarn4x \\
+      --model HuggingFaceBio/carbon-3B-longctx-32k-rope5M-yarn4x \\
       --task niah --ctx 65536 --add_dna_tag --bf16
 
   # GENERator-v2 3B at 16k
@@ -82,8 +82,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--revision", default=None, help="HF revision (branch / tag / commit)")
     p.add_argument("--backend", choices=["hf", "evo2"], default="hf")
     # Dataset
-    p.add_argument("--data_path", default="hf-carbon/genome-niah",
-                   help="HF dataset id (default: hf-carbon/genome-niah) or local parquet path")
+    p.add_argument("--data_path", default="HuggingFaceBio/genome-niah",
+                   help="HF dataset id (default: HuggingFaceBio/genome-niah) or local parquet path")
     p.add_argument("--task", required=True,
                    choices=["niah", "neardup_d4", "neardup_d2", "neardup_d1"])
     p.add_argument("--ctx", type=int, required=True,

@@ -18,12 +18,12 @@ source "$HF_VENV"
 
 EVAL=${EVAL_DIR:-/fsx/loubna/projects_v2/carbon/loubna-workspace/release_repos/carbon/evaluation}
 OUT=$SLURM_SUBMIT_DIR/results
-MODEL=hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1
+MODEL=HuggingFaceBio/Carbon-3B
 
 mkdir -p "$OUT/brca2"
 
 python "$EVAL/vep_eval.py" \
     --model "$MODEL" \
-    --data_path hf://datasets/hf-carbon/brca2-vep/brca2_vep.parquet \
+    --data_path hf://datasets/HuggingFaceBio/brca2-vep/brca2_vep.parquet \
     --add_dna_tag --bf16 \
     --output_dir "$OUT/brca2"
