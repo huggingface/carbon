@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH -J seq_recovery_eval
-#SBATCH -o slurm_logs/seq_recovery_eval_%j.out
-#SBATCH -e slurm_logs/seq_recovery_eval_%j.err
+#SBATCH -o logs/seq_recovery_eval_%j.out
+#SBATCH -e logs/seq_recovery_eval_%j.err
 # Long HF rollouts at higher gen_len can exceed six hours on a single GPU.
 # Use a longer walltime so the sweep can complete without manual relaunches.
 #SBATCH -t 3-00:00:00
