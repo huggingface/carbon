@@ -17,6 +17,9 @@ dependencies = [
 [tool.setuptools]
 packages = []
 
+[tool.uv]
+no-build-isolation-package = ["flash-attn"]
+
 [dependency-groups]
 evaluation = [
   "pandas>=3.0.3",
@@ -24,5 +27,6 @@ evaluation = [
 ]
 evo2 = [
   "evo2==0.5.5",
+  "flash-attn==2.8.0.post2",
   "transformer-engine[core-cu12,pytorch]==2.13.0",
 ]

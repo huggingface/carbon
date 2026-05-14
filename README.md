@@ -57,9 +57,11 @@ uv sync --group evaluation --group evo2
 ```
 
 The Evo2 group pins the PyPI CUDA 12 Transformer Engine package
-(`transformer-engine[core-cu12,pytorch]==2.13.0`). To check which attention
-backend and FlashAttention version Transformer Engine uses at runtime, enable
-debug logging when running an Evo2 eval:
+(`transformer-engine[core-cu12,pytorch]==2.13.0`) and builds
+`flash-attn==2.8.0.post2` without build isolation for Evo2's `vortex`
+dependency. To check which attention backend and FlashAttention version
+Transformer Engine uses at runtime, enable debug logging when running an Evo2
+eval:
 
 ```bash
 NVTE_DEBUG=1 NVTE_DEBUG_LEVEL=1 uv run --group evo2 --group evaluation ...
