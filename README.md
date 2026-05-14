@@ -50,6 +50,21 @@ To include evaluation dependencies, run:
 uv sync --group evaluation
 ```
 
+For Evo2-backed evaluation, install the evaluation and Evo2 dependency groups:
+
+```bash
+uv sync --group evaluation --group evo2
+```
+
+The Evo2 group pins the PyPI CUDA 12 Transformer Engine package
+(`transformer-engine[core-cu12,pytorch]==2.13.0`). To check which attention
+backend and FlashAttention version Transformer Engine uses at runtime, enable
+debug logging when running an Evo2 eval:
+
+```bash
+NVTE_DEBUG=1 NVTE_DEBUG_LEVEL=1 uv run --group evo2 --group evaluation ...
+```
+
 ## Inference
 
 ```python

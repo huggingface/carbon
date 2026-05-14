@@ -22,3 +22,7 @@ evaluation = [
   "pandas>=3.0.3",
   "scikit-learn>=1.8.0",
 ]
+evo2 = [
+  "evo2==0.5.5",
+  "transformer-engine[core-cu12,pytorch]==2.13.0",
+]
