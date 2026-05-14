@@ -45,7 +45,7 @@ Every eval takes `--backend {hf, evo2}`:
 - **`evo2`** — the official [`evo2`](https://github.com/ArcInstitute/evo2)
   inference library. Required for Arc Institute's Evo2 checkpoints (their
   weights aren't AutoModel-compatible). Pass the Evo2 model name (e.g.
-  `evo2_1b_base`, `evo2_7b`, `evo2_40b_base`) as `--model`.
+  `evo2_1b_base`, `evo2_7b`, `evo2_40b`) as `--model`.
 
 ## DNA tags — why and when to use them
 
