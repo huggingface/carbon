@@ -326,10 +326,10 @@ We used n=100 at 16-32 k and n=20 at 64 k (smaller n = noisier estimates).
 Aggregate across shards by concatenating per-shard parquets and taking a sample-weighted mean of `gen_exact_match`.
 
 ```bash
-# Evo2 at 32k, n=100 split across 6 shards (1 node each)
+# From the repository root: Evo2 at 32k, n=100 split across 6 shards (1 node each)
 for SHARD in 0 1 2 3 4 5; do
-  sbatch evaluation/slurm/evo2-7b/genome_niah.sbatch \
-    POOL=100 SHARD=$SHARD NSHARDS=6 TASK=niah CTX=32768
+  POOL=100 SHARD=$SHARD NSHARDS=6 TASK=niah CTX=32768 \
+    sbatch evaluation/slurm/evo2-7b/genome_niah.sbatch
 done
 ```
 ## Environment

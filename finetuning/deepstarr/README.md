@@ -68,7 +68,8 @@ To reproduce the continuation-style run, pass the previous checkpoint:
 ## Slurm
 
 The Slurm template uses the same defaults as the main run and lets you override
-the common knobs with environment variables.
+the common knobs with environment variables. Submit it from the repository root;
+it sources `~/.bashrc` before running.
 
 ```sh
 RUN_NAME=carbon-3b-deepstarr-full-ft \

@@ -10,25 +10,12 @@
 #SBATCH --mem=256G
 #SBATCH --time=18:00:00
 
+source ~/.bashrc
 set -euo pipefail
-export PATH="${HOME}/.local/bin:${PATH}"
-
-if [[ -z "${REPO_ROOT:-}" ]]; then
-    REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
-    while [[ "$REPO_ROOT" != "/" && ! -f "$REPO_ROOT/pyproject.toml" ]]; do
-        REPO_ROOT=$(dirname "$REPO_ROOT")
-    done
-fi
-if [[ ! -f "$REPO_ROOT/pyproject.toml" ]]; then
-    echo "Could not locate repository root from REPO_ROOT=${REPO_ROOT}" >&2
-    exit 1
-fi
-cd "$REPO_ROOT"
-
 UV_RUN=(uv run --group evaluation)
 
 
-OUT=$SLURM_SUBMIT_DIR/results/traitgym
+OUT=results/traitgym
 mkdir -p "$OUT"
 
 "${UV_RUN[@]}" python "evaluation/vep_eval.py" \

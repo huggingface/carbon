@@ -10,28 +10,15 @@
 
 # ClinVar coding + non_coding chained. Default 24 kb left context;
 # override with CONTEXT_LENGTH=48000 for the full Carbon-paper recipe.
-#   sbatch                          clinvar.sbatch  # 24 kb
-#   sbatch --export=CONTEXT_LENGTH=48000 clinvar.sbatch  # 48 kb
+#   sbatch evaluation/slurm/carbon-3B/clinvar.sbatch  # 24 kb
+#   sbatch --export=CONTEXT_LENGTH=48000 evaluation/slurm/carbon-3B/clinvar.sbatch  # 48 kb
 
+source ~/.bashrc
 set -euo pipefail
-export PATH="${HOME}/.local/bin:${PATH}"
-
-if [[ -z "${REPO_ROOT:-}" ]]; then
-    REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
-    while [[ "$REPO_ROOT" != "/" && ! -f "$REPO_ROOT/pyproject.toml" ]]; do
-        REPO_ROOT=$(dirname "$REPO_ROOT")
-    done
-fi
-if [[ ! -f "$REPO_ROOT/pyproject.toml" ]]; then
-    echo "Could not locate repository root from REPO_ROOT=${REPO_ROOT}" >&2
-    exit 1
-fi
-cd "$REPO_ROOT"
-
 UV_RUN=(uv run --group evaluation)
 
 CONTEXT_LENGTH=${CONTEXT_LENGTH:-24000}
-OUT=$SLURM_SUBMIT_DIR/results/clinvar_${CONTEXT_LENGTH}
+OUT=results/clinvar_${CONTEXT_LENGTH}
 MODEL=HuggingFaceBio/Carbon-3B
 
 mkdir -p "$OUT/coding" "$OUT/non_coding"

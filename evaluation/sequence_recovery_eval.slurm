@@ -11,10 +11,11 @@
 #SBATCH --mem=64G
 
 # Example usage:
-# sbatch --export=MODEL=/path/to/carbon/model-or-hub-repo,REVISION=checkpoint-10000,DATA_TYPE=eukaryote sequence_recovery_eval.slurm
+# sbatch --export=MODEL=/path/to/carbon/model-or-hub-repo,REVISION=checkpoint-10000,DATA_TYPE=eukaryote evaluation/sequence_recovery_eval.slurm
 # Sweep usage:
 #   Use evaluation/submit_sequence_recovery_gen_len_sweep.sh to submit one job per gen_len.
 
+source ~/.bashrc
 set -euo pipefail
 
 if command -v module >/dev/null 2>&1; then
@@ -58,17 +59,7 @@ if [[ -z "$MODEL" ]]; then
   exit 1
 fi
 
-if [[ -z "${REPO_ROOT:-}" ]]; then
-  REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-  while [[ "$REPO_ROOT" != "/" && ! -f "$REPO_ROOT/pyproject.toml" ]]; do
-    REPO_ROOT=$(dirname "$REPO_ROOT")
-  done
-fi
-if [[ ! -f "$REPO_ROOT/pyproject.toml" ]]; then
-  echo "Could not locate repository root from REPO_ROOT=${REPO_ROOT}" >&2
-  exit 1
-fi
-SCRIPT_DIR="${REPO_ROOT}/evaluation"
+SCRIPT_DIR="evaluation"
 
 CMD=(uv run --project "$SCRIPT_DIR" python "$SCRIPT_DIR/sequence_recovery_eval.py" \
   --model "$MODEL" \

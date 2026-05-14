@@ -13,26 +13,13 @@
 # ClinVar coding + non_coding. Default 24 kb context; CONTEXT_LENGTH=48000 for 48 kb.
 # 2 GPUs for headroom on Evo2 7B at long context.
 
+source ~/.bashrc
 set -euo pipefail
-export PATH="${HOME}/.local/bin:${PATH}"
-
-if [[ -z "${REPO_ROOT:-}" ]]; then
-    REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
-    while [[ "$REPO_ROOT" != "/" && ! -f "$REPO_ROOT/pyproject.toml" ]]; do
-        REPO_ROOT=$(dirname "$REPO_ROOT")
-    done
-fi
-if [[ ! -f "$REPO_ROOT/pyproject.toml" ]]; then
-    echo "Could not locate repository root from REPO_ROOT=${REPO_ROOT}" >&2
-    exit 1
-fi
-cd "$REPO_ROOT"
-
 UV_RUN=(uv run --group evaluation)
 
 
 CONTEXT_LENGTH=${CONTEXT_LENGTH:-24000}
-OUT=$SLURM_SUBMIT_DIR/results/clinvar_${CONTEXT_LENGTH}
+OUT=results/clinvar_${CONTEXT_LENGTH}
 mkdir -p "$OUT/coding" "$OUT/non_coding"
 
 "${UV_RUN[@]}" python "evaluation/clinvar_vep_eval.py" \

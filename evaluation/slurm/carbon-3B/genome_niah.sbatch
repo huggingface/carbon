@@ -17,27 +17,14 @@
 # Run all (task, ctx) combos:
 #   for TASK in niah neardup_d4 neardup_d2 neardup_d1; do
 #     for CTX in 4096 8192 16384 32768; do
-#       TASK=$TASK CTX=$CTX sbatch genome_niah.sbatch
+#       TASK=$TASK CTX=$CTX sbatch evaluation/slurm/carbon-3B/genome_niah.sbatch
 #     done
 #   done
+source ~/.bashrc
 set -euo pipefail
-export PATH="${HOME}/.local/bin:${PATH}"
-
-if [[ -z "${REPO_ROOT:-}" ]]; then
-    REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
-    while [[ "$REPO_ROOT" != "/" && ! -f "$REPO_ROOT/pyproject.toml" ]]; do
-        REPO_ROOT=$(dirname "$REPO_ROOT")
-    done
-fi
-if [[ ! -f "$REPO_ROOT/pyproject.toml" ]]; then
-    echo "Could not locate repository root from REPO_ROOT=${REPO_ROOT}" >&2
-    exit 1
-fi
-cd "$REPO_ROOT"
-
 UV_RUN=(uv run --group evaluation)
 
-OUT=$SLURM_SUBMIT_DIR/results/genome_niah
+OUT=results/genome_niah
 MODEL=${MODEL:-HuggingFaceBio/carbon-3B-longctx-32k-rope5M}
 TASK=${TASK:-niah}
 CTX=${CTX:-32768}
