@@ -19,6 +19,6 @@ OUT=results/sequence_recovery
 mkdir -p "$OUT"
 
 "${UV_RUN[@]}" python "evaluation/sequence_recovery.py" \
-    --model evo2_7b_base --backend evo2 \
+    --model evo2_7b --backend evo2 \
     --data_type eukaryote --gen_len_bp 30 --bf16 \
     --output_dir "$OUT"

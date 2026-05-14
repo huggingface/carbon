@@ -28,7 +28,7 @@ Example:
 
   # Evo2 7B (1 GPU)
   python sequence_recovery.py \
-      --model evo2_7b_base --backend evo2 \
+      --model evo2_7b --backend evo2 \
       --data_type eukaryote --gen_len_bp 30
 """
 

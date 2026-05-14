@@ -32,7 +32,7 @@ Example:
 
   python perturbation_tasks.py \
       --task synonymous_codon_substitution \
-      --model evo2_7b_base --backend evo2 --bf16
+      --model evo2_7b --backend evo2 --bf16
 """
 
 import argparse

@@ -15,7 +15,7 @@ One folder per model family, each with the same six scripts:
 carbon-3B/          → HuggingFaceBio/Carbon-3B   (also lc32k variants)
 generator-v2-3b/    → GenerTeam/GENERator-v2-eukaryote-3b-base
 evo2-1b/            → evo2_1b_base
-evo2-7b/            → evo2_7b_base
+evo2-7b/            → evo2_7b
 ```
 
 | Script | Eval |

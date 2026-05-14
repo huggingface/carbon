@@ -19,7 +19,7 @@ OUT=results/traitgym
 mkdir -p "$OUT"
 
 "${UV_RUN[@]}" python "evaluation/vep_eval.py" \
-    --model evo2_7b_base --backend evo2 \
+    --model evo2_7b --backend evo2 \
     --data_path hf://datasets/HuggingFaceBio/traitgym/mendelian_traits_vep.parquet \
     --bf16 --rev_comp_avg \
     --output_dir "$OUT"

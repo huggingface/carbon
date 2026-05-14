@@ -20,10 +20,10 @@ mkdir -p "$OUT/tata" "$OUT/synonymous_codons"
 
 "${UV_RUN[@]}" python "evaluation/perturbation_tasks.py" \
     --task tata_perturbation \
-    --model evo2_7b_base --backend evo2 --bf16 \
+    --model evo2_7b --backend evo2 --bf16 \
     --output_dir "$OUT/tata"
 
 "${UV_RUN[@]}" python "evaluation/perturbation_tasks.py" \
     --task synonymous_codon_substitution \
-    --model evo2_7b_base --backend evo2 --bf16 \
+    --model evo2_7b --backend evo2 --bf16 \
     --output_dir "$OUT/synonymous_codons"

@@ -34,7 +34,7 @@ Example:
 
   # Evo2 7B
   python clinvar_vep_eval.py \
-      --model evo2_7b_base --backend evo2 --bf16 \
+      --model evo2_7b --backend evo2 --bf16 \
       --context_length 24000 --output_dir ./results/clinvar_evo2
 """
 

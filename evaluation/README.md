@@ -45,7 +45,7 @@ Every eval takes `--backend {hf, evo2}`:
 - **`evo2`** — the official [`evo2`](https://github.com/ArcInstitute/evo2)
   inference library. Required for Arc Institute's Evo2 checkpoints (their
   weights aren't AutoModel-compatible). Pass the Evo2 model name (e.g.
-  `evo2_1b_base`, `evo2_7b_base`, `evo2_40b_base`) as `--model`.
+  `evo2_1b_base`, `evo2_7b`, `evo2_40b_base`) as `--model`.
 
 ## DNA tags — why and when to use them
 
@@ -65,7 +65,7 @@ natively.
 | Carbon hybrid (`Carbon-3B`, `carbon-8B-hybrid-loss-1T-v1`) | `--add_dna_tag` |
 | Carbon pure-DNA (`carbon-3B-pure-dna-*`) | `--add_bos` (sequence-recovery only; uses `<s>`) |
 | GENERator (`GenerTeam/GENERator-*`) | _(no flag — raw DNA)_ |
-| Evo2 (`evo2_1b_base`, `evo2_7b_base`, ...) | `--backend evo2` |
+| Evo2 (`evo2_1b_base`, `evo2_7b`, ...) | `--backend evo2` |
 
 ## 1. Sequence recovery
 
@@ -88,7 +88,7 @@ uv run --group evaluation python evaluation/sequence_recovery.py \
 
 # Evo2 7B (1 GPU)
 uv run --group evaluation python evaluation/sequence_recovery.py \
-    --model evo2_7b_base --backend evo2 \
+    --model evo2_7b --backend evo2 \
     --data_type eukaryote --gen_len_bp 30 --bf16
 ```
 
@@ -178,7 +178,7 @@ uv run --group evaluation python evaluation/vep_eval.py \
 
 # Evo2 7B (1 GPU)
 uv run --group evaluation python evaluation/vep_eval.py \
-    --model evo2_7b_base --backend evo2 \
+    --model evo2_7b --backend evo2 \
     --data_path hf://datasets/HuggingFaceBio/brca2-vep/brca2_vep.parquet \
     --bf16 --output_dir ./results/brca2_vep_evo2
 ```
@@ -209,7 +209,7 @@ uv run --group evaluation python evaluation/clinvar_vep_eval.py \
 
 # Evo2 7B
 uv run --group evaluation python evaluation/clinvar_vep_eval.py \
-    --model evo2_7b_base --backend evo2 --bf16 \
+    --model evo2_7b --backend evo2 --bf16 \
     --context_length 24000 --output_dir ./results/clinvar_evo2
 ```
 
@@ -247,7 +247,7 @@ uv run --group evaluation python evaluation/perturbation_tasks.py \
 # Evo2 7B
 uv run --group evaluation python evaluation/perturbation_tasks.py \
     --task tata_perturbation \
-    --model evo2_7b_base --backend evo2 --bf16
+    --model evo2_7b --backend evo2 --bf16
 ```
 
 ## 5. Genome-NIAH long-context retrieval

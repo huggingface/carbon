@@ -19,7 +19,7 @@ OUT=results
 mkdir -p "$OUT/brca2"
 
 "${UV_RUN[@]}" python "evaluation/vep_eval.py" \
-    --model evo2_7b_base --backend evo2 \
+    --model evo2_7b --backend evo2 \
     --data_path hf://datasets/HuggingFaceBio/brca2-vep/brca2_vep.parquet \
     --bf16 \
     --output_dir "$OUT/brca2"
