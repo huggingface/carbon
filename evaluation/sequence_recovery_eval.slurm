@@ -15,8 +15,6 @@
 # Sweep usage:
 #   Use evaluation/submit_sequence_recovery_gen_len_sweep.sh to submit one job per gen_len.
 
-export HF_HUB_TRUST_REMOTE_CODE=1
-
 set -euo pipefail
 
 if command -v module >/dev/null 2>&1; then
@@ -60,18 +58,17 @@ if [[ -z "$MODEL" ]]; then
   exit 1
 fi
 
-REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+if [[ -z "${REPO_ROOT:-}" ]]; then
+  REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+  while [[ "$REPO_ROOT" != "/" && ! -f "$REPO_ROOT/pyproject.toml" ]]; do
+    REPO_ROOT=$(dirname "$REPO_ROOT")
+  done
+fi
+if [[ ! -f "$REPO_ROOT/pyproject.toml" ]]; then
+  echo "Could not locate repository root from REPO_ROOT=${REPO_ROOT}" >&2
+  exit 1
+fi
 SCRIPT_DIR="${REPO_ROOT}/evaluation"
-
-# Torch 2.10.0+cu129 needs the CUDA libraries bundled in the eval venv to take
-# precedence over the cluster's CUDA 12.1 libraries.
-VENV_SITE_PACKAGES="${SCRIPT_DIR}/.venv/lib/python3.12/site-packages"
-if [[ -d "${VENV_SITE_PACKAGES}/nvidia/nvjitlink/lib" ]]; then
-  export LD_LIBRARY_PATH="${VENV_SITE_PACKAGES}/nvidia/nvjitlink/lib:${LD_LIBRARY_PATH:-}"
-fi
-if [[ -d "${VENV_SITE_PACKAGES}/nvidia/cusparse/lib" ]]; then
-  export LD_LIBRARY_PATH="${VENV_SITE_PACKAGES}/nvidia/cusparse/lib:${LD_LIBRARY_PATH:-}"
-fi
 
 CMD=(uv run --project "$SCRIPT_DIR" python "$SCRIPT_DIR/sequence_recovery_eval.py" \
   --model "$MODEL" \

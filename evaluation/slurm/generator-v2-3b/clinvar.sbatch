@@ -11,10 +11,18 @@
 # ClinVar coding + non_coding. Default 24 kb context; CONTEXT_LENGTH=48000 for 48 kb.
 
 set -euo pipefail
-source ~/.bashrc
+export PATH="${HOME}/.local/bin:${PATH}"
 
-SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-REPO_ROOT=${REPO_ROOT:-$(cd "$SCRIPT_DIR/../../.." && pwd)}
+if [[ -z "${REPO_ROOT:-}" ]]; then
+    REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
+    while [[ "$REPO_ROOT" != "/" && ! -f "$REPO_ROOT/pyproject.toml" ]]; do
+        REPO_ROOT=$(dirname "$REPO_ROOT")
+    done
+fi
+if [[ ! -f "$REPO_ROOT/pyproject.toml" ]]; then
+    echo "Could not locate repository root from REPO_ROOT=${REPO_ROOT}" >&2
+    exit 1
+fi
 cd "$REPO_ROOT"
 
 UV_RUN=(uv run --group evaluation)

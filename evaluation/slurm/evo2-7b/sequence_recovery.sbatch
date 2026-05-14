@@ -11,18 +11,22 @@
 #SBATCH --time=24:00:00
 
 set -euo pipefail
-source ~/.bashrc
+export PATH="${HOME}/.local/bin:${PATH}"
 
-SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-REPO_ROOT=${REPO_ROOT:-$(cd "$SCRIPT_DIR/../../.." && pwd)}
+if [[ -z "${REPO_ROOT:-}" ]]; then
+    REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
+    while [[ "$REPO_ROOT" != "/" && ! -f "$REPO_ROOT/pyproject.toml" ]]; do
+        REPO_ROOT=$(dirname "$REPO_ROOT")
+    done
+fi
+if [[ ! -f "$REPO_ROOT/pyproject.toml" ]]; then
+    echo "Could not locate repository root from REPO_ROOT=${REPO_ROOT}" >&2
+    exit 1
+fi
 cd "$REPO_ROOT"
 
 UV_RUN=(uv run --group evaluation)
 
-export CUDA_HOME=${CUDA_HOME:-/usr/local/cuda-12.4}
-export HF_HUB_TRUST_REMOTE_CODE=1
-NVIDIA_LIBS=$("${UV_RUN[@]}" python -c "import nvidia.cudnn, os; print(os.path.dirname(nvidia.cudnn.__file__) + '/lib')")
-export LD_LIBRARY_PATH=${NVIDIA_LIBS}:${LD_LIBRARY_PATH:-}
 
 OUT=$SLURM_SUBMIT_DIR/results/sequence_recovery
 mkdir -p "$OUT"

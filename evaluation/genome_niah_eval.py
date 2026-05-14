@@ -178,6 +178,9 @@ def _prefix(seq: str, add_dna_tag: bool) -> str:
 
 def _load_hf(args):
     from transformers import AutoModelForCausalLM, AutoTokenizer
+    from transformers_compat import patch_generator_sample, patch_legacy_tokenizer_base
+
+    patch_legacy_tokenizer_base()
     tokenizer = AutoTokenizer.from_pretrained(args.model, revision=args.revision, trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -188,6 +191,7 @@ def _load_hf(args):
         device_map="auto",
     )
     model.eval()
+    patch_generator_sample(model)
     return model, tokenizer
 
 
@@ -351,6 +355,9 @@ def _unwrap(out):
 
 def evo2_eval(args, df) -> pd.DataFrame:
     """Generation only — Evo2 LL path is too expensive at long ctx (no separate body call)."""
+    from evo2_runtime import preload_cudnn_libraries
+
+    preload_cudnn_libraries()
     from evo2 import Evo2
     print(f"Loading Evo2 model: {args.model}")
     t0 = time.time()

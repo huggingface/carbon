@@ -15,7 +15,7 @@
 # Use sharding to split a (task, ctx) cell across multiple jobs.
 #
 # Env overrides:
-#   MODEL=...     default evo2_1b
+#   MODEL=...     default evo2_1b_base
 #   TASK=...      niah | neardup_d4 | neardup_d2 | neardup_d1
 #   CTX=...       4096 | 8192 | 16384 | 32768 | 65536 | 131072
 #   SHARD=...     0..N-1   (default 0)
@@ -28,22 +28,26 @@
 #     SHARD=$SHARD NSHARDS=6 CTX=32768 sbatch genome_niah.sbatch
 #   done
 set -euo pipefail
-source ~/.bashrc
+export PATH="${HOME}/.local/bin:${PATH}"
 
-SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-REPO_ROOT=${REPO_ROOT:-$(cd "$SCRIPT_DIR/../../.." && pwd)}
+if [[ -z "${REPO_ROOT:-}" ]]; then
+    REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)}"
+    while [[ "$REPO_ROOT" != "/" && ! -f "$REPO_ROOT/pyproject.toml" ]]; do
+        REPO_ROOT=$(dirname "$REPO_ROOT")
+    done
+fi
+if [[ ! -f "$REPO_ROOT/pyproject.toml" ]]; then
+    echo "Could not locate repository root from REPO_ROOT=${REPO_ROOT}" >&2
+    exit 1
+fi
 cd "$REPO_ROOT"
 
 UV_RUN=(uv run --group evaluation)
 
-export CUDA_HOME=${CUDA_HOME:-/usr/local/cuda-12.4}
-export HF_HUB_TRUST_REMOTE_CODE=1
-NVIDIA_LIBS=$("${UV_RUN[@]}" python -c "import nvidia.cudnn, os; print(os.path.dirname(nvidia.cudnn.__file__) + '/lib')")
-export LD_LIBRARY_PATH=${NVIDIA_LIBS}:${LD_LIBRARY_PATH:-}
 
 OUT=$SLURM_SUBMIT_DIR/results/genome_niah
 
-MODEL=${MODEL:-evo2_1b}
+MODEL=${MODEL:-evo2_1b_base}
 TASK=${TASK:-niah}
 CTX=${CTX:-32768}
 SHARD=${SHARD:-0}

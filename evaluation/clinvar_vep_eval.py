@@ -117,12 +117,16 @@ def _hf_shard(args):
     torch.cuda.set_device(shard_id)
     device = f"cuda:{shard_id}"
 
+    from transformers_compat import patch_generator_sample, patch_legacy_tokenizer_base
+
+    patch_legacy_tokenizer_base()
     tok = AutoTokenizer.from_pretrained(model, revision=revision, trust_remote_code=True)
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
     m = AutoModelForCausalLM.from_pretrained(
         model, revision=revision, trust_remote_code=True, dtype=getattr(torch, dtype)
     ).to(device).eval()
+    patch_generator_sample(m)
 
     out = []
     with tqdm(total=len(records), desc=f"gpu{shard_id}", unit="seq") as pbar:
@@ -215,6 +219,9 @@ def _evo2_shard(args):
     os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
     import torch
+    from evo2_runtime import preload_cudnn_libraries
+
+    preload_cudnn_libraries()
     from evo2 import Evo2
     from evo2.scoring import prepare_batch
 
@@ -300,6 +307,9 @@ def main():
         p_ref, p_alt = compute_probs_evo2(df, args.model, args.batch_size)
     else:
         probs = compute_probs_hf(df, args.model, args.revision, dtype_str, args.batch_size)
+        from transformers_compat import patch_generator_sample, patch_legacy_tokenizer_base
+
+        patch_legacy_tokenizer_base()
         tok = AutoTokenizer.from_pretrained(args.model, revision=args.revision, trust_remote_code=True)
         p_ref, p_alt = marginalise_probs(df, probs, tok, args.num_processes)
     print(f"Scoring took {time.time() - t0:.1f}s")
