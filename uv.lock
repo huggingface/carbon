@@ -221,13 +221,13 @@ source = { editable = "." }
 dependencies = [
     { name = "accelerate" },
     { name = "datasets" },
+    { name = "scikit-learn" },
     { name = "vllm" },
 ]
 
 [package.dev-dependencies]
 evaluation = [
     { name = "pandas" },
-    { name = "scikit-learn" },
 ]
 evo2 = [
     { name = "evo2" },
@@ -239,14 +239,12 @@ evo2 = [
 requires-dist = [
     { name = "accelerate", specifier = ">=1.13.0" },
     { name = "datasets", specifier = ">=4.8.5" },
+    { name = "scikit-learn", specifier = ">=1.8.0" },
     { name = "vllm", specifier = "==0.19.1" },
 ]
 
 [package.metadata.requires-dev]
-evaluation = [
-    { name = "pandas", specifier = ">=3.0.3" },
-    { name = "scikit-learn", specifier = ">=1.8.0" },
-]
+evaluation = [{ name = "pandas", specifier = ">=3.0.3" }]
 evo2 = [
     { name = "evo2", specifier = "==0.5.5" },
     { name = "flash-attn", specifier = "==2.8.0.post2" },
