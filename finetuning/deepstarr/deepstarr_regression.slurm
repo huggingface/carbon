@@ -13,7 +13,7 @@ GPUS_PER_NODE="${GPUS_PER_NODE:-1}"
 SLURM_NNODES="${SLURM_NNODES:-1}"
 NUM_PROCESSES="${NUM_PROCESSES:-$((SLURM_NNODES * GPUS_PER_NODE))}"
 ACCELERATE_CONFIG="${ACCELERATE_CONFIG:-finetuning/deepstarr/fsdp2_carbon.yaml}"
-MODEL="${MODEL:-hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1}"
+MODEL="${MODEL:-HuggingFaceBio/Carbon-3B}"
 RUN_NAME="${RUN_NAME:-carbon-3b-deepstarr-regression-train}"
 OUTPUT_DIR="${OUTPUT_DIR:-scratch/deepstarr/${RUN_NAME}}"
 

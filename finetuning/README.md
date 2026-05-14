@@ -18,7 +18,7 @@ accelerate launch \
   --config_file finetuning/deepstarr/fsdp2_carbon.yaml \
   --num_processes 1 \
   finetuning/deepstarr/deepstarr_train.py \
-  --model hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1 \
+  --model HuggingFaceBio/Carbon-3B \
   --output_dir scratch/deepstarr/carbon-3b-regression-train
 ```
 

@@ -27,7 +27,7 @@ from transformers import TrainingArguments
 from transformers import set_seed
 
 DATASET_NAME = "GenerTeam/DeepSTARR-enhancer-activity"
-MODEL_NAME = "hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1"
+MODEL_NAME = "HuggingFaceBio/Carbon-3B"
 TARGET_NAMES = ("dev", "hk")
 SCALED_COLUMNS = ("Dev_log2_enrichment_scaled", "Hk_log2_enrichment_scaled")
 RAW_LOG_COLUMNS = ("Dev_log2_enrichment", "Hk_log2_enrichment")
