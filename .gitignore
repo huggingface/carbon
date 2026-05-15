@@ -226,4 +226,5 @@ __marimo__/
 
 # Data
 results/
-logs/
+logs/*
+!logs/.gitkeep
