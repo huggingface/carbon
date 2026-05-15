@@ -1,8 +1,13 @@
 # SLURM scripts
 
 Reference SLURM scripts the Carbon team uses to run the eval suite on the
-**internal HF cluster**. Paths (`/fsx/loubna/...`, partition `hopper-prod`,
-etc.) are HF-specific — adapt them for your setup if needed.
+**internal HF cluster**. Cluster settings such as partition `hopper-prod`,
+GPU counts, and walltimes are HF-specific — adapt them for your setup if needed.
+
+Submit these scripts from the repository root. Log and result paths are relative
+to that directory. Each script sources `~/.bashrc` before enabling strict mode,
+so put local shell setup such as `uv` there instead of adding hard-coded PATH or
+library exports to the scripts.
 
 One folder per model family, each with the same six scripts:
 
@@ -10,7 +15,7 @@ One folder per model family, each with the same six scripts:
 carbon-3B/          → HuggingFaceBio/Carbon-3B   (also lc32k variants)
 generator-v2-3b/    → GenerTeam/GENERator-v2-eukaryote-3b-base
 evo2-1b/            → evo2_1b_base
-evo2-7b/            → evo2_7b_base
+evo2-7b/            → evo2_7b
 ```
 
 | Script | Eval |
@@ -24,16 +29,14 @@ evo2-7b/            → evo2_7b_base
 
 Launch one model:
 ```bash
-cd evaluation/slurm/carbon-3B
-for f in *.sbatch; do sbatch "$f"; done
+for f in evaluation/slurm/carbon-3B/*.sbatch; do sbatch "$f"; done
 ```
 
 Sweep Genome-NIAH across all 4 tasks × 4 short contexts (Carbon, ~3h total):
 ```bash
-cd evaluation/slurm/carbon-3B
 for TASK in niah neardup_d4 neardup_d2 neardup_d1; do
   for CTX in 4096 8192 16384 32768; do
-    TASK=$TASK CTX=$CTX sbatch genome_niah.sbatch
+    TASK=$TASK CTX=$CTX sbatch evaluation/slurm/carbon-3B/genome_niah.sbatch
   done
 done
 ```

@@ -36,7 +36,7 @@ Example:
 
   # Evo2 (1 GPU)
   python vep_eval.py \
-      --model evo2_7b_base --backend evo2 \
+      --model evo2_7b --backend evo2 \
       --data_path hf://datasets/HuggingFaceBio/brca2-vep/brca2_vep.parquet \
       --bf16 --output_dir ./results/brca2_vep_evo2
 """
@@ -93,12 +93,16 @@ def _shard_worker(args):
     torch.cuda.set_device(shard_id)
     device = f"cuda:{shard_id}"
 
+    from transformers_compat import patch_generator_sample, patch_legacy_tokenizer_base
+
+    patch_legacy_tokenizer_base()
     tok = AutoTokenizer.from_pretrained(model, revision=revision, trust_remote_code=True)
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
     m = AutoModelForCausalLM.from_pretrained(
         model, revision=revision, trust_remote_code=True, dtype=getattr(torch, dtype)
     ).to(device).eval()
+    patch_generator_sample(m)
 
     out = []
     with tqdm(total=len(items), desc=f"gpu{shard_id}", unit="seq") as pbar:
@@ -162,6 +166,9 @@ def score_hf(df: pd.DataFrame, args) -> tuple[np.ndarray, np.ndarray]:
 
 def score_evo2(df: pd.DataFrame, args) -> tuple[np.ndarray, np.ndarray]:
     """Single-GPU full-sequence LL via the official Evo2 library."""
+    from evo2_runtime import preload_cudnn_libraries
+
+    preload_cudnn_libraries()
     from evo2 import Evo2
 
     model = Evo2(args.model.split("/")[-1])

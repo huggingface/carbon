@@ -31,7 +31,7 @@ accelerate launch \
   --config_file finetuning/deepstarr/fsdp2_carbon.yaml \
   --num_processes 1 \
   finetuning/deepstarr/deepstarr_train.py \
-  --model hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1 \
+  --model HuggingFaceBio/Carbon-3B \
   --output_dir scratch/deepstarr/smoke \
   --max_train_samples 256 \
   --max_eval_samples 128 \
@@ -54,7 +54,7 @@ accelerate launch \
   --config_file finetuning/deepstarr/fsdp2_carbon.yaml \
   --num_processes 1 \
   finetuning/deepstarr/deepstarr_train.py \
-  --model hf-carbon/carbon-3B-hybrid-loss-1T-mix2-v1 \
+  --model HuggingFaceBio/Carbon-3B \
   --output_dir scratch/deepstarr/carbon-3b-regression-train \
   --run_name carbon-3b-regression-train
 ```
@@ -68,7 +68,8 @@ To reproduce the continuation-style run, pass the previous checkpoint:
 ## Slurm
 
 The Slurm template uses the same defaults as the main run and lets you override
-the common knobs with environment variables.
+the common knobs with environment variables. Submit it from the repository root;
+it sources `~/.bashrc` before running.
 
 ```sh
 RUN_NAME=carbon-3b-deepstarr-full-ft \

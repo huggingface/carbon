@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=c3b-brca2
-#SBATCH --output=/fsx/loubna/logs/%x-%j.out
-#SBATCH --error=/fsx/loubna/logs/%x-%j.err
+#SBATCH --output=logs/%x-%j.out
+#SBATCH --error=logs/%x-%j.err
 #SBATCH --partition=hopper-prod
 #SBATCH --qos=normal
 #SBATCH --nodes=1
@@ -10,19 +10,16 @@
 
 # BRCA2 on 8 GPUs. ~5 min on Carbon 3B.
 
-set -euo pipefail
 source ~/.bashrc
+set -euo pipefail
+UV_RUN=(uv run --group evaluation)
 
-HF_VENV=${HF_VENV:-/fsx/loubna/.venv-2-6-cu124/bin/activate}
-source "$HF_VENV"
-
-EVAL=${EVAL_DIR:-/fsx/loubna/projects_v2/carbon/loubna-workspace/release_repos/carbon/evaluation}
-OUT=$SLURM_SUBMIT_DIR/results
+OUT=results
 MODEL=HuggingFaceBio/Carbon-3B
 
 mkdir -p "$OUT/brca2"
 
-python "$EVAL/vep_eval.py" \
+"${UV_RUN[@]}" python "evaluation/vep_eval.py" \
     --model "$MODEL" \
     --data_path hf://datasets/HuggingFaceBio/brca2-vep/brca2_vep.parquet \
     --add_dna_tag --bf16 \

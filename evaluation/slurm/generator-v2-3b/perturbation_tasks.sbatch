@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=gen3b-perturb
-#SBATCH --output=/fsx/loubna/logs/%x-%j.out
-#SBATCH --error=/fsx/loubna/logs/%x-%j.err
+#SBATCH --output=logs/%x-%j.out
+#SBATCH --error=logs/%x-%j.err
 #SBATCH --partition=hopper-prod
 #SBATCH --qos=normal
 #SBATCH --nodes=1
@@ -10,24 +10,21 @@
 #SBATCH --mem=128G
 #SBATCH --time=02:00:00
 
-set -euo pipefail
 source ~/.bashrc
+set -euo pipefail
+UV_RUN=(uv run --group evaluation)
 
-HF_VENV=${HF_VENV:-/fsx/loubna/.venv-2-6-cu124/bin/activate}
-source "$HF_VENV"
-
-EVAL=${EVAL_DIR:-/fsx/loubna/projects_v2/carbon/loubna-workspace/release_repos/carbon/evaluation}
-OUT=$SLURM_SUBMIT_DIR/results
+OUT=results
 MODEL=GenerTeam/GENERator-v2-eukaryote-3b-base
 
 mkdir -p "$OUT/tata" "$OUT/synonymous_codons"
 
-python "$EVAL/perturbation_tasks.py" \
+"${UV_RUN[@]}" python "evaluation/perturbation_tasks.py" \
     --task tata_perturbation \
     --model "$MODEL" --bf16 \
     --output_dir "$OUT/tata"
 
-python "$EVAL/perturbation_tasks.py" \
+"${UV_RUN[@]}" python "evaluation/perturbation_tasks.py" \
     --task synonymous_codon_substitution \
     --model "$MODEL" --bf16 \
     --output_dir "$OUT/synonymous_codons"

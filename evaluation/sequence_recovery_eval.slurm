@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH -J seq_recovery_eval
-#SBATCH -o slurm_logs/seq_recovery_eval_%j.out
-#SBATCH -e slurm_logs/seq_recovery_eval_%j.err
+#SBATCH -o logs/seq_recovery_eval_%j.out
+#SBATCH -e logs/seq_recovery_eval_%j.err
 # Long HF rollouts at higher gen_len can exceed six hours on a single GPU.
 # Use a longer walltime so the sweep can complete without manual relaunches.
 #SBATCH -t 3-00:00:00
@@ -11,12 +11,11 @@
 #SBATCH --mem=64G
 
 # Example usage:
-# sbatch --export=MODEL=/path/to/carbon/model-or-hub-repo,REVISION=checkpoint-10000,DATA_TYPE=eukaryote sequence_recovery_eval.slurm
+# sbatch --export=MODEL=/path/to/carbon/model-or-hub-repo,REVISION=checkpoint-10000,DATA_TYPE=eukaryote evaluation/sequence_recovery_eval.slurm
 # Sweep usage:
 #   Use evaluation/submit_sequence_recovery_gen_len_sweep.sh to submit one job per gen_len.
 
-export HF_HUB_TRUST_REMOTE_CODE=1
-
+source ~/.bashrc
 set -euo pipefail
 
 if command -v module >/dev/null 2>&1; then
@@ -60,18 +59,7 @@ if [[ -z "$MODEL" ]]; then
   exit 1
 fi
 
-REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-SCRIPT_DIR="${REPO_ROOT}/evaluation"
-
-# Torch 2.10.0+cu129 needs the CUDA libraries bundled in the eval venv to take
-# precedence over the cluster's CUDA 12.1 libraries.
-VENV_SITE_PACKAGES="${SCRIPT_DIR}/.venv/lib/python3.12/site-packages"
-if [[ -d "${VENV_SITE_PACKAGES}/nvidia/nvjitlink/lib" ]]; then
-  export LD_LIBRARY_PATH="${VENV_SITE_PACKAGES}/nvidia/nvjitlink/lib:${LD_LIBRARY_PATH:-}"
-fi
-if [[ -d "${VENV_SITE_PACKAGES}/nvidia/cusparse/lib" ]]; then
-  export LD_LIBRARY_PATH="${VENV_SITE_PACKAGES}/nvidia/cusparse/lib:${LD_LIBRARY_PATH:-}"
-fi
+SCRIPT_DIR="evaluation"
 
 CMD=(uv run --project "$SCRIPT_DIR" python "$SCRIPT_DIR/sequence_recovery_eval.py" \
   --model "$MODEL" \

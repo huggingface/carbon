@@ -27,6 +27,9 @@ one flag, so the same script runs on Carbon, GENERator, or Evo2.
 > primary sources live in [`data_prep/`](data_prep). Not needed for normal
 > eval runs — every command below defaults to the prebuilt Hub parquets.
 
+Run the commands below from the repository root. `uv run --group evaluation`
+uses the root project environment plus evaluation-only dependencies.
+
 The two VEP scripts use different scoring recipes. BRCA / TraitGym use
 **centered + full-LL delta** (the Evo2 / TraitGym convention recent papers
 compare against). For ClinVar we use the GENERator setup — **right-end /
@@ -42,7 +45,7 @@ Every eval takes `--backend {hf, evo2}`:
 - **`evo2`** — the official [`evo2`](https://github.com/ArcInstitute/evo2)
   inference library. Required for Arc Institute's Evo2 checkpoints (their
   weights aren't AutoModel-compatible). Pass the Evo2 model name (e.g.
-  `evo2_1b_base`, `evo2_7b_base`, `evo2_40b_base`) as `--model`.
+  `evo2_1b_base`, `evo2_7b`, `evo2_40b`) as `--model`.
 
 ## DNA tags — why and when to use them
 
@@ -62,7 +65,7 @@ natively.
 | Carbon hybrid (`Carbon-3B`, `carbon-8B-hybrid-loss-1T-v1`) | `--add_dna_tag` |
 | Carbon pure-DNA (`carbon-3B-pure-dna-*`) | `--add_bos` (sequence-recovery only; uses `<s>`) |
 | GENERator (`GenerTeam/GENERator-*`) | _(no flag — raw DNA)_ |
-| Evo2 (`evo2_1b_base`, `evo2_7b_base`, ...) | `--backend evo2` |
+| Evo2 (`evo2_1b_base`, `evo2_7b`, ...) | `--backend evo2` |
 
 ## 1. Sequence recovery
 
@@ -74,18 +77,18 @@ Dataset: [`GenerTeam/sequence-recovery`](https://huggingface.co/datasets/GenerTe
 
 ```bash
 # Carbon 3B hybrid (flagship)
-python sequence_recovery.py \
+uv run --group evaluation python evaluation/sequence_recovery.py \
     --model HuggingFaceBio/Carbon-3B \
     --data_type eukaryote --add_dna_tag --bf16
 
 # GENERator
-python sequence_recovery.py \
+uv run --group evaluation python evaluation/sequence_recovery.py \
     --model GenerTeam/GENERator-v2-eukaryote-1.2b-base \
     --data_type eukaryote --bf16
 
 # Evo2 7B (1 GPU)
-python sequence_recovery.py \
-    --model evo2_7b_base --backend evo2 \
+uv run --group evaluation python evaluation/sequence_recovery.py \
+    --model evo2_7b --backend evo2 \
     --data_type eukaryote --gen_len_bp 30 --bf16
 ```
 
@@ -110,7 +113,10 @@ evaluation/submit_sequence_recovery_gen_len_sweep.sh
 Plot a completed sweep with Carbon and Evo2 curves:
 
 ```sh
-uv run --project evaluation python evaluation/scripts/plot_sequence_recovery_sweep.py \
+uv run --group evaluation \
+  --with matplotlib \
+  --with numpy \
+  python evaluation/scripts/plot_sequence_recovery_sweep.py \
   --base_dir ./eval_results/sequence_recovery_long_rollouts_pow2 \
   --data_type eukaryote \
   --model "3B hybrid (HF)=Carbon-3B-600B-dna-generv2-fp32-lmhead" \
@@ -157,22 +163,22 @@ then point `--data_path` at it.
 
 ```bash
 # Carbon 3B hybrid · BRCA2 (8 GPUs)
-python vep_eval.py \
+uv run --group evaluation python evaluation/vep_eval.py \
     --model HuggingFaceBio/Carbon-3B \
     --data_path hf://datasets/HuggingFaceBio/brca2-vep/brca2_vep.parquet \
     --add_dna_tag --bf16 \
     --output_dir ./results/brca2_vep
 
 # TraitGym Mendelian — pass --rev_comp_avg, variants can sit on either strand
-python vep_eval.py \
+uv run --group evaluation python evaluation/vep_eval.py \
     --model HuggingFaceBio/Carbon-3B \
     --data_path hf://datasets/HuggingFaceBio/traitgym/mendelian_traits_vep.parquet \
     --add_dna_tag --bf16 --rev_comp_avg \
     --output_dir ./results/traitgym_mendelian
 
 # Evo2 7B (1 GPU)
-python vep_eval.py \
-    --model evo2_7b_base --backend evo2 \
+uv run --group evaluation python evaluation/vep_eval.py \
+    --model evo2_7b --backend evo2 \
     --data_path hf://datasets/HuggingFaceBio/brca2-vep/brca2_vep.parquet \
     --bf16 --output_dir ./results/brca2_vep_evo2
 ```
@@ -196,14 +202,14 @@ per-breakdown AUROC / AUPRC automatically.
 
 ```bash
 # Carbon 3B hybrid (flagship, 8 GPUs, 24 kbp context)
-python clinvar_vep_eval.py \
+uv run --group evaluation python evaluation/clinvar_vep_eval.py \
     --model HuggingFaceBio/Carbon-3B \
     --add_dna_tag --bf16 --context_length 24000 \
     --output_dir ./results/clinvar
 
 # Evo2 7B
-python clinvar_vep_eval.py \
-    --model evo2_7b_base --backend evo2 --bf16 \
+uv run --group evaluation python evaluation/clinvar_vep_eval.py \
+    --model evo2_7b --backend evo2 --bf16 \
     --context_length 24000 --output_dir ./results/clinvar_evo2
 ```
 
@@ -227,21 +233,21 @@ Dataset: [`HuggingFaceBio/carbon_tasks`](https://huggingface.co/datasets/Hugging
 
 ```bash
 # Carbon 3B hybrid · TATA
-python perturbation_tasks.py \
+uv run --group evaluation python evaluation/perturbation_tasks.py \
     --task tata_perturbation \
     --model HuggingFaceBio/Carbon-3B \
     --add_dna_tag --bf16
 
 # Carbon 3B hybrid · synonymous codons
-python perturbation_tasks.py \
+uv run --group evaluation python evaluation/perturbation_tasks.py \
     --task synonymous_codon_substitution \
     --model HuggingFaceBio/Carbon-3B \
     --add_dna_tag --bf16
 
 # Evo2 7B
-python perturbation_tasks.py \
+uv run --group evaluation python evaluation/perturbation_tasks.py \
     --task tata_perturbation \
-    --model evo2_7b_base --backend evo2 --bf16
+    --model evo2_7b --backend evo2 --bf16
 ```
 
 ## 5. Genome-NIAH long-context retrieval
@@ -285,17 +291,17 @@ Each model is evaluated up to its native context (with optional yarn4× extensio
 
 ```bash
 # Carbon-3B-lc32k at native 32 k (4 k / 8 k / 16 k / 32 k)
-python genome_niah_eval.py \
+uv run --group evaluation python evaluation/genome_niah_eval.py \
     --model HuggingFaceBio/carbon-3B-longctx-32k-rope5M \
     --task niah --ctx 32768 --add_dna_tag --bf16
 
 # GENERator-v2 3B at native 16 k (4 k / 8 k / 16 k)
-python genome_niah_eval.py \
+uv run --group evaluation python evaluation/genome_niah_eval.py \
     --model GenerTeam/GENERator-v2-eukaryote-3b-base \
     --task niah --ctx 16384 --bf16
 
 # Evo2-7B at 32 k, single 8-GPU node
-python genome_niah_eval.py \
+uv run --group evaluation python evaluation/genome_niah_eval.py \
     --model evo2_7b --backend evo2 \
     --task niah --ctx 32768 --prefill_chars 4096
 ```
@@ -320,28 +326,31 @@ We used n=100 at 16-32 k and n=20 at 64 k (smaller n = noisier estimates).
 Aggregate across shards by concatenating per-shard parquets and taking a sample-weighted mean of `gen_exact_match`.
 
 ```bash
-# Evo2 at 32k, n=100 split across 6 shards (1 node each)
+# From the repository root: Evo2 at 32k, n=100 split across 6 shards (1 node each)
 for SHARD in 0 1 2 3 4 5; do
-  sbatch evaluation/slurm/evo2-7b/genome_niah.sbatch \
-    POOL=100 SHARD=$SHARD NSHARDS=6 TASK=niah CTX=32768
+  POOL=100 SHARD=$SHARD NSHARDS=6 TASK=niah CTX=32768 \
+    sbatch evaluation/slurm/evo2-7b/genome_niah.sbatch
 done
 ```
 ## Environment
 
-Pinned requirements files at the repo root reproduce the exact versions used
-for Carbon's reported numbers.
+Install the root project environment with uv:
 
-**HF backend** (Carbon, GENERator, any HF causal LM):
 ```bash
-pip install -r requirements.txt
+# Core dependencies only
+uv sync
+
+# Core plus evaluation dependencies
+uv sync --group evaluation
 ```
 
 **Evo2 backend** — the official [evo2](https://github.com/ArcInstitute/evo2)
 install needs CUDA 12.1+, Python 3.11/3.12, and matching `flash-attn` +
 `transformer-engine` builds for your PyTorch. Follow their install guide
-first, then layer our pins on top:
+first, then layer any additional pins on top with uv:
+
 ```bash
-pip install -r requirements-evo2.txt
+uv pip install -r requirements-evo2.txt
 ```
 
 We use a separate venv for Evo2 in practice because the `flash-attn` and

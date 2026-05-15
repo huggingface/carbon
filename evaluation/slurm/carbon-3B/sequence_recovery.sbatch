@@ -1,26 +1,23 @@
 #!/bin/bash
 #SBATCH --job-name=c3b-sr
-#SBATCH --output=/fsx/loubna/logs/%x-%j.out
-#SBATCH --error=/fsx/loubna/logs/%x-%j.err
+#SBATCH --output=logs/%x-%j.out
+#SBATCH --error=logs/%x-%j.err
 #SBATCH --partition=hopper-prod
 #SBATCH --qos=normal
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:8
 #SBATCH --time=06:00:00
 
-set -euo pipefail
 source ~/.bashrc
+set -euo pipefail
+UV_RUN=(uv run --group evaluation)
 
-HF_VENV=${HF_VENV:-/fsx/loubna/.venv-2-6-cu124/bin/activate}
-source "$HF_VENV"
-
-EVAL=${EVAL_DIR:-/fsx/loubna/projects_v2/carbon/loubna-workspace/release_repos/carbon/evaluation}
-OUT=$SLURM_SUBMIT_DIR/results/sequence_recovery
+OUT=results/sequence_recovery
 MODEL=HuggingFaceBio/Carbon-3B
 
 mkdir -p "$OUT"
 
-python "$EVAL/sequence_recovery.py" \
+"${UV_RUN[@]}" python "evaluation/sequence_recovery.py" \
     --model "$MODEL" \
     --data_type eukaryote \
     --add_dna_tag --bf16 \

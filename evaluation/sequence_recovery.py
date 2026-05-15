@@ -28,7 +28,7 @@ Example:
 
   # Evo2 7B (1 GPU)
   python sequence_recovery.py \
-      --model evo2_7b_base --backend evo2 \
+      --model evo2_7b --backend evo2 \
       --data_type eukaryote --gen_len_bp 30
 """
 
@@ -102,6 +102,9 @@ def hf_shard(shard_id, records, args, dtype_str):
     device = f"cuda:{shard_id}"
     dtype = torch.bfloat16 if dtype_str == "bfloat16" else torch.float32
 
+    from transformers_compat import patch_generator_sample, patch_legacy_tokenizer_base
+
+    patch_legacy_tokenizer_base()
     tok = AutoTokenizer.from_pretrained(args.model, revision=args.revision, trust_remote_code=True)
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
@@ -109,6 +112,7 @@ def hf_shard(shard_id, records, args, dtype_str):
     model = AutoModelForCausalLM.from_pretrained(
         args.model, revision=args.revision, trust_remote_code=True, dtype=dtype
     ).to(device).eval()
+    patch_generator_sample(model)
 
     special_ids = getattr(tok, "all_special_ids", []) or []
     logits_processor = LogitsProcessorList([SuppressSpecialTokens(special_ids)])
@@ -161,6 +165,9 @@ def run_hf(df: pd.DataFrame, args, dtype_str: str):
 
 
 def run_evo2(df: pd.DataFrame, args):
+    from evo2_runtime import preload_cudnn_libraries
+
+    preload_cudnn_libraries()
     from evo2 import Evo2
 
     model_name = args.model.split("/")[-1]

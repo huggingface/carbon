@@ -1,26 +1,23 @@
 #!/bin/bash
 #SBATCH --job-name=gen3b-traitgym
-#SBATCH --output=/fsx/loubna/logs/%x-%j.out
-#SBATCH --error=/fsx/loubna/logs/%x-%j.err
+#SBATCH --output=logs/%x-%j.out
+#SBATCH --error=logs/%x-%j.err
 #SBATCH --partition=hopper-prod
 #SBATCH --qos=normal
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:8
 #SBATCH --time=04:00:00
 
-set -euo pipefail
 source ~/.bashrc
+set -euo pipefail
+UV_RUN=(uv run --group evaluation)
 
-HF_VENV=${HF_VENV:-/fsx/loubna/.venv-2-6-cu124/bin/activate}
-source "$HF_VENV"
-
-EVAL=${EVAL_DIR:-/fsx/loubna/projects_v2/carbon/loubna-workspace/release_repos/carbon/evaluation}
-OUT=$SLURM_SUBMIT_DIR/results/traitgym
+OUT=results/traitgym
 MODEL=GenerTeam/GENERator-v2-eukaryote-3b-base
 
 mkdir -p "$OUT"
 
-python "$EVAL/vep_eval.py" \
+"${UV_RUN[@]}" python "evaluation/vep_eval.py" \
     --model "$MODEL" \
     --data_path hf://datasets/HuggingFaceBio/traitgym/mendelian_traits_vep.parquet \
     --bf16 --rev_comp_avg \

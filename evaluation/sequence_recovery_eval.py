@@ -396,6 +396,9 @@ def _load_model_and_tokenizer(
     dtype: torch.dtype,
     attn_implementation: Optional[str] = None,
 ):
+    from transformers_compat import patch_generator_sample, patch_legacy_tokenizer_base
+
+    patch_legacy_tokenizer_base()
     tokenizer = AutoTokenizer.from_pretrained(
         model, revision=revision, trust_remote_code=True
     )
@@ -409,6 +412,7 @@ def _load_model_and_tokenizer(
     if attn_implementation:
         kwargs["attn_implementation"] = attn_implementation
     model_obj = AutoModelForCausalLM.from_pretrained(model, **kwargs)
+    patch_generator_sample(model_obj)
     return model_obj, tokenizer
 
 
@@ -730,6 +734,9 @@ def _evo2_model_name(model_arg: str) -> str:
 
 def process_data_evo2(sequences_data, args):
     try:
+        from evo2_runtime import preload_cudnn_libraries
+
+        preload_cudnn_libraries()
         from evo2 import Evo2
     except Exception as e:
         raise RuntimeError(
@@ -848,6 +855,9 @@ def _run_vllm_engine(sequences_data, args, tp_size):
         resolve_prompt_len_bp(args) // args.bp_per_token + args.gen_len + 8
     )
 
+    from transformers_compat import patch_generator_sample, patch_legacy_tokenizer_base
+
+    patch_legacy_tokenizer_base()
     tokenizer = AutoTokenizer.from_pretrained(
         args.model, revision=args.revision, trust_remote_code=True
     )

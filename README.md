@@ -15,6 +15,7 @@ makes reproducibility harder.
 ## Contents
 
 - [Models](#models)
+- [Installation](#installation)
 - [Inference](#inference)
 - [Pretraining](#pretraining)
 - [Evaluation](#evaluation)
@@ -34,6 +35,37 @@ or eval snippet below wraps DNA inputs with `<dna>` — see
 [evaluation/README.md](evaluation/README.md) for the full DNA-tag explanation.
 
 TODO: add this behavior in tokenizer by default?
+
+## Installation
+
+Install the core runtime dependencies with:
+
+```bash
+uv sync
+```
+
+To include evaluation dependencies, run:
+
+```bash
+uv sync --group evaluation
+```
+
+For Evo2-backed evaluation, install the evaluation and Evo2 dependency groups:
+
+```bash
+uv sync --group evaluation --group evo2
+```
+
+The Evo2 group pins the PyPI CUDA 12 Transformer Engine package
+(`transformer-engine[core-cu12,pytorch]==2.13.0`) and builds
+`flash-attn==2.8.0.post2` without build isolation for Evo2's `vortex`
+dependency. To check which attention backend and FlashAttention version
+Transformer Engine uses at runtime, enable debug logging when running an Evo2
+eval:
+
+```bash
+NVTE_DEBUG=1 NVTE_DEBUG_LEVEL=1 uv run --group evo2 --group evaluation ...
+```
 
 ## Inference
 

@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "carbon"
+version = "0.0.0"
+description = "Carbon dependencies for model training and evaluation"
+requires-python = ">=3.12,<3.13"
+readme = "README.md"
+dependencies = [
+  "vllm==0.19.1",
+  "datasets>=4.8.5",
+  "accelerate>=1.13.0",
+  "scikit-learn>=1.8.0",
+]
+
+[tool.setuptools]
+packages = []
+
+[tool.uv]
+no-build-isolation-package = ["flash-attn"]
+
+[dependency-groups]
+evaluation = [
+  "pandas>=3.0.3",
+]
+evo2 = [
+  "evo2==0.5.5",
+  "flash-attn==2.8.0.post2",
+  "transformer-engine[core-cu12,pytorch]==2.13.0",
+]

@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=c3b-niah
-#SBATCH --output=/fsx/loubna/logs/%x-%j.out
-#SBATCH --error=/fsx/loubna/logs/%x-%j.err
+#SBATCH --output=logs/%x-%j.out
+#SBATCH --error=logs/%x-%j.err
 #SBATCH --partition=hopper-prod
 #SBATCH --qos=normal
 #SBATCH --nodes=1
@@ -17,24 +17,21 @@
 # Run all (task, ctx) combos:
 #   for TASK in niah neardup_d4 neardup_d2 neardup_d1; do
 #     for CTX in 4096 8192 16384 32768; do
-#       TASK=$TASK CTX=$CTX sbatch genome_niah.sbatch
+#       TASK=$TASK CTX=$CTX sbatch evaluation/slurm/carbon-3B/genome_niah.sbatch
 #     done
 #   done
-set -euo pipefail
 source ~/.bashrc
+set -euo pipefail
+UV_RUN=(uv run --group evaluation)
 
-HF_VENV=${HF_VENV:-/fsx/loubna/.venv-2-6-cu124/bin/activate}
-source "$HF_VENV"
-
-EVAL=${EVAL_DIR:-/fsx/loubna/projects_v2/carbon/loubna-workspace/release_repos/carbon/evaluation}
-OUT=$SLURM_SUBMIT_DIR/results/genome_niah
+OUT=results/genome_niah
 MODEL=${MODEL:-HuggingFaceBio/carbon-3B-longctx-32k-rope5M}
 TASK=${TASK:-niah}
 CTX=${CTX:-32768}
 
 mkdir -p "$OUT"
 
-python "$EVAL/genome_niah_eval.py" \
+"${UV_RUN[@]}" python "evaluation/genome_niah_eval.py" \
     --model "$MODEL" \
     --task "$TASK" --ctx "$CTX" \
     --add_dna_tag --bf16 \

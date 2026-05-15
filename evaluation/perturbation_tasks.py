@@ -32,7 +32,7 @@ Example:
 
   python perturbation_tasks.py \
       --task synonymous_codon_substitution \
-      --model evo2_7b_base --backend evo2 --bf16
+      --model evo2_7b --backend evo2 --bf16
 """
 
 import argparse
@@ -108,6 +108,9 @@ def score_hf(model, tok, seqs, max_length: int, batch_size: int):
 
 
 def score_evo2(seqs, batch_size: int, model_name: str):
+    from evo2_runtime import preload_cudnn_libraries
+
+    preload_cudnn_libraries()
     from evo2 import Evo2
 
     torch.cuda.set_device(0)
@@ -140,6 +143,9 @@ def main():
         pos_scores = score_evo2(pos, args.batch_size, model_name)
         neg_scores = score_evo2(neg, args.batch_size, model_name)
     else:
+        from transformers_compat import patch_generator_sample, patch_legacy_tokenizer_base
+
+        patch_legacy_tokenizer_base()
         tok = AutoTokenizer.from_pretrained(args.model, revision=args.revision, trust_remote_code=True)
         if tok.pad_token is None:
             tok.pad_token = tok.eos_token
@@ -148,6 +154,7 @@ def main():
             torch_dtype=torch.bfloat16 if args.bf16 else torch.float32,
             device_map="auto",
         )
+        patch_generator_sample(model)
         pos_scores = score_hf(model, tok, pos, args.max_length, args.batch_size)
         neg_scores = score_hf(model, tok, neg, args.max_length, args.batch_size)
     print(f"Scoring took {time.time() - t0:.1f}s")
