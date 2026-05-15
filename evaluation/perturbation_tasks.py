@@ -21,14 +21,17 @@ Metric: pairwise discrimination accuracy = mean(LL(real) > LL(perturbed)).
 Backends and tag flags work the same way as the other Carbon evals:
   --backend hf       Carbon, GENERator, any HF causal LM
   --backend evo2     official Evo2 inference library
-  --add_dna_tag      prepend <dna> (Carbon hybrid models)
-  (default)          no prefix — GENERator and Evo2
 
 Example:
   python perturbation_tasks.py \
       --task tata_perturbation \
       --model HuggingFaceBio/Carbon-3B \
-      --add_dna_tag --bf16
+      --bf16
+
+  python perturbation_tasks.py \
+      --task tata_perturbation \
+      --model GenerTeam/GENERator-v2-eukaryote-3b-base \
+      --bf16
 
   python perturbation_tasks.py \
       --task synonymous_codon_substitution \
@@ -70,7 +73,6 @@ def parse_args():
     p.add_argument("--max_length", type=int, default=2048)
     p.add_argument("--batch_size", type=int, default=16)
     p.add_argument("--bf16", action="store_true")
-    p.add_argument("--add_dna_tag", action="store_true", help="Wrap with <dna>...</dna> (Carbon hybrid)")
     return p.parse_args()
 
 
@@ -84,26 +86,28 @@ def load_df(args) -> pd.DataFrame:
     return load_dataset(args.dataset, args.subset, split=args.split).to_pandas()
 
 
-def wrap(seqs, add_dna_tag: bool):
-    return [f"<dna>{s}</dna>" if add_dna_tag else s for s in seqs]
-
-
 @torch.no_grad()
 def score_hf(model, tok, seqs, max_length: int, batch_size: int):
-    """Mean log-prob per token."""
+    """Mean log-prob per token (or per base if model has score_sequence)."""
     out = []
-    for i in tqdm(range(0, len(seqs), batch_size), desc="scoring"):
+
+    # Use score_sequence for bp-level scoring
+    for i in tqdm(range(0, len(seqs), batch_size), desc="scoring (bp-level)"):
         batch = seqs[i : i + batch_size]
-        enc = tok(batch, return_tensors="pt", padding=True, truncation=True,
-                  max_length=max_length, add_special_tokens=False)
-        ids = enc["input_ids"].to(model.device)
-        attn = enc["attention_mask"].to(model.device)
-        logits = model(ids).logits[:, :-1, :]
-        targets = ids[:, 1:]
-        mask = attn[:, 1:]
-        logp = torch.log_softmax(logits, dim=-1).gather(-1, targets.unsqueeze(-1)).squeeze(-1)
-        denom = mask.sum(dim=1).clamp(min=1)
-        out.extend(((logp * mask).sum(dim=1) / denom).tolist())
+        # Truncate sequences if needed
+        batch = [s[:max_length] if len(s) > max_length else s for s in batch]
+
+        if len(batch) == 1:
+            _, actual_probs = model.score_sequence(batch[0])
+            actual_probs_list = [actual_probs]
+        else:
+            _, actual_probs_list = model.score_sequence(batch)
+
+        # Compute mean log-prob per base
+        for actual_probs in actual_probs_list:
+            mean_logp = torch.log(actual_probs).mean().item()
+            out.append(mean_logp)
+
     return out
 
 
@@ -133,8 +137,8 @@ def main():
         args.subset = task_cfg["subset"]
     df = load_df(args)
     pos_col, neg_col = task_cfg["pos"], task_cfg["neg"]
-    pos = wrap(df[pos_col].astype(str).tolist(), args.add_dna_tag)
-    neg = wrap(df[neg_col].astype(str).tolist(), args.add_dna_tag)
+    pos = df[pos_col].astype(str).tolist()
+    neg = df[neg_col].astype(str).tolist()
     print(f"Loaded {len(df)} pairs ({pos_col} vs {neg_col})")
 
     t0 = time.time()

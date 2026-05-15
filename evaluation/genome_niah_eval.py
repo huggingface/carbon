@@ -22,7 +22,9 @@ Backends (`--backend`):
 
 Tag flag (HF backend only):
   --add_dna_tag    prepend `<dna>` (Carbon hybrid models)
-
+  --add_bos        prepend `<s>` (GENERator pure-DNA)
+  (default)        no prefix — Evo2
+    
 Sharding (`--shard_idx --n_shards`) splits a (task, ctx) cell across multiple
 SLURM jobs. Especially useful for Evo2 at ctx ≥ 64k where a row takes
 ~4–14 hours.
@@ -93,6 +95,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--bf16", action="store_true", help="HF: load model in bf16")
     p.add_argument("--add_dna_tag", action="store_true",
                    help="HF: prepend `<dna>` (Carbon hybrid models)")
+    p.add_argument("--add_bos", action="store_true", help="HF: prepend <s> (GENERator pure-DNA)")
     p.add_argument("--restrict_to_dna_tokens", action="store_true", default=True,
                    help="HF: mask non-DNA tokens during generation (Carbon hybrid). "
                    "Reads DNA token range from the model's dna_config.json. "
@@ -172,8 +175,12 @@ def apply_sharding(df: pd.DataFrame, args: argparse.Namespace) -> pd.DataFrame:
 # HF backend (Carbon, GENERator, any HF causal LM)
 # ============================================================
 
-def _prefix(seq: str, add_dna_tag: bool) -> str:
-    return ("<dna>" + seq) if add_dna_tag else seq
+def _prefix(args) -> str:
+    if args.add_dna_tag:
+        return "<dna>"
+    if args.add_bos:
+        return "<s>"
+    return ""
 
 
 def _load_hf(args):
@@ -254,9 +261,10 @@ def hf_generate(model, tokenizer, df, args) -> List[dict]:
     max_new = n_gen_tokens_set[0]
 
     out = []
+    prefix = _prefix(args)
     for start in tqdm(range(0, len(df), args.batch_size), desc="hf-gen"):
         end = min(start + args.batch_size, len(df))
-        prompts = [_prefix(s, args.add_dna_tag) for s in df["prompt"].iloc[start:end]]
+        prompts = [prefix + s for s in df["prompt"].iloc[start:end]]
         enc = tokenizer(prompts, add_special_tokens=False, return_tensors="pt",
                         padding=True, truncation=False).to(device)
         with torch.inference_mode():
@@ -285,9 +293,10 @@ def hf_likelihood(model, tokenizer, df, args) -> List[dict]:
         raise RuntimeError("Model body not found at .model or .transformer")
 
     def ll(prompts, full_seqs):
-        full_enc = tokenizer([_prefix(s, args.add_dna_tag) for s in full_seqs],
+        prefix = _prefix(args)
+        full_enc = tokenizer([prefix + s for s in full_seqs],
                              add_special_tokens=False, return_tensors="pt", padding=True).to(device)
-        prompt_enc = tokenizer([_prefix(s, args.add_dna_tag) for s in prompts],
+        prompt_enc = tokenizer([prefix + s for s in prompts],
                                add_special_tokens=False, return_tensors="pt", padding=True).to(device)
         full_ids = full_enc["input_ids"]
         full_len = int(full_enc["attention_mask"].sum(1)[0].item())

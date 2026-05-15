@@ -10,8 +10,8 @@ Three model families are supported via a single flag:
 
 Tag flags (mutually exclusive):
   --add_dna_tag      prepend `<dna>` to each sequence (Carbon hybrid models)
-  --add_bos          prepend `<s>` (Carbon pure-DNA / 6-mer models)
-  (default)          no prefix — GENERator and Evo2
+  --add_bos          prepend `<s>` (GENERator pure-DNA)
+  (default)          no prefix — Evo2
 
 Eukaryote / bacteria / others come from the GenerTeam/sequence-recovery dataset.
 
@@ -23,8 +23,8 @@ Example:
 
   # GENERator
   python sequence_recovery.py \
-      --model GenerTeam/GENERator-v2-eukaryote-1.2b-base \
-      --data_type eukaryote --bf16
+      --model GenerTeam/GENERator-v2-eukaryote-3b-base \
+      --data_type eukaryote --add_bos --bf16
 
   # Evo2 7B (1 GPU)
   python sequence_recovery.py \
@@ -59,7 +59,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--batch_size", type=int, default=64)
     p.add_argument("--bf16", action="store_true")
     p.add_argument("--add_dna_tag", action="store_true", help="Prepend <dna> (Carbon hybrid)")
-    p.add_argument("--add_bos", action="store_true", help="Prepend <s> (Carbon pure-DNA)")
+    p.add_argument("--add_bos", action="store_true", help="Prepend <s> (GENERator pure-DNA)")
     p.add_argument("--max_samples", type=int, default=None, help="For quick testing")
     return p.parse_args()
 

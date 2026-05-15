@@ -24,12 +24,20 @@ Backends & flags follow the rest of the evaluation suite:
   --backend hf       Carbon, GENERator, any HF causal LM
   --backend evo2     official Evo2 inference library
   --add_dna_tag      prepend <dna> (Carbon hybrid models)
+  --add_bos          prepend <s> (GENERator pure-DNA)
+  (default)          no prefix — Evo2
 
 Example:
   # Carbon 3B hybrid (flagship, 8 GPUs, 24 kb context)
   python clinvar_vep_eval.py \
       --model HuggingFaceBio/Carbon-3B \
       --add_dna_tag --bf16 --context_length 24000 \
+      --output_dir ./results/clinvar
+  
+  # GENERator
+  python clinvar_vep_eval.py \
+      --model GenerTeam/GENERator-v2-eukaryote-3b-base \
+      --add_bos --bf16 --context_length 24000 \
       --output_dir ./results/clinvar
 
   # Evo2 7B
@@ -71,10 +79,16 @@ def parse_args():
                    help="CPU procs for the per-variant probability marginalisation.")
     p.add_argument("--output_dir", default="./results/clinvar")
     p.add_argument("--bf16", action="store_true")
-    p.add_argument("--add_dna_tag", action="store_true",
-                   help="Wrap with <dna> (Carbon hybrid models)")
+    p.add_argument("--add_dna_tag", action="store_true", help="Prepend <dna> (Carbon hybrid)")
+    p.add_argument("--add_bos", action="store_true", help="Prepend <s> (GENERator pure-DNA)")
     return p.parse_args()
 
+def _prefix(args) -> str:
+    if args.add_dna_tag:
+        return "<dna>"
+    if args.add_bos:
+        return "<s>"
+    return ""
 
 def load_and_extract(hg38_path: str, clinvar_path: str, context_length: int) -> pd.DataFrame:
     """Load ClinVar + hg38 and build the left-context sequence for each variant."""
@@ -296,14 +310,12 @@ def main():
             )
 
     df = load_and_extract(args.hg38_path, args.clinvar_path, args.context_length)
-    if args.add_dna_tag:
-        print("Wrapping sequences with <dna> for hybrid tokenizer")
-        df["sequence"] = df["sequence"].apply(lambda s: f"<dna>{s}")
+
+    prefix = _prefix(args)
+    df["sequence"] = df["sequence"].apply(lambda s: prefix + s)
 
     t0 = time.time()
     if args.backend == "evo2":
-        if args.add_dna_tag:
-            print("WARNING: --add_dna_tag ignored with --backend evo2")
         p_ref, p_alt = compute_probs_evo2(df, args.model, args.batch_size)
     else:
         probs = compute_probs_hf(df, args.model, args.revision, dtype_str, args.batch_size)

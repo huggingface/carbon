@@ -25,20 +25,26 @@ Example:
   python vep_eval.py \
       --model HuggingFaceBio/Carbon-3B \
       --data_path hf://datasets/HuggingFaceBio/brca2-vep/brca2_vep.parquet \
-      --add_dna_tag --bf16 --output_dir ./results/brca2_vep
-
-  # TraitGym Mendelian: pass --rev_comp_avg since variants can sit on either strand
+      --bf16 --output_dir ./results/brca2_vep
+    
+  # GENERator on BRCA2 (8 GPUs)
   python vep_eval.py \
-      --model HuggingFaceBio/Carbon-3B \
-      --data_path hf://datasets/HuggingFaceBio/traitgym/mendelian_traits_vep.parquet \
-      --add_dna_tag --bf16 --rev_comp_avg \
-      --output_dir ./results/traitgym_mendelian
+      --model GenerTeam/GENERator-v2-eukaryote-3b-base \
+      --data_path hf://datasets/HuggingFaceBio/brca2-vep/brca2_vep.parquet \
+      --bf16 --output_dir ./results/brca2_vep
 
-  # Evo2 (1 GPU)
+  # Evo2 on BRCA2 (1 GPU)
   python vep_eval.py \
       --model evo2_7b --backend evo2 \
       --data_path hf://datasets/HuggingFaceBio/brca2-vep/brca2_vep.parquet \
-      --bf16 --output_dir ./results/brca2_vep_evo2
+      --bf16 --output_dir ./results/brca2_vep
+    
+  # TraitGym Mendelian
+  python vep_eval.py \
+      --model HuggingFaceBio/Carbon-3B \
+      --data_path hf://datasets/HuggingFaceBio/traitgym/mendelian_traits_vep.parquet \
+      --bf16 --rev_comp_avg \
+      --output_dir ./results/traitgym_mendelian
 """
 
 import argparse
@@ -66,8 +72,6 @@ def parse_args():
     p.add_argument("--batch_size", type=int, default=2)
     p.add_argument("--output_dir", required=True)
     p.add_argument("--bf16", action="store_true")
-    p.add_argument("--add_dna_tag", action="store_true",
-                   help="Wrap with <dna> (Carbon hybrid models)")
     p.add_argument("--rev_comp_avg", action="store_true",
                    help="Strand-symmetric scoring: score each variant on the forward "
                         "window AND its reverse-complement, then average the two deltas. "
@@ -83,12 +87,8 @@ def _revcomp(seq: str) -> str:
     return seq.translate(_COMPLEMENT)[::-1]
 
 
-def _wrap(seq: str, add_dna_tag: bool) -> str:
-    return f"<dna>{seq}" if add_dna_tag else seq
-
-
 def _shard_worker(args):
-    """Score one GPU shard. Returns [(uid, log_likelihood), ...]."""
+    """Score one GPU shard using bp-level score_sequence. Returns [(uid, log_likelihood), ...]."""
     shard_id, items, model, revision, dtype, batch_size = args
     torch.cuda.set_device(shard_id)
     device = f"cuda:{shard_id}"
@@ -109,17 +109,20 @@ def _shard_worker(args):
         for i in range(0, len(items), batch_size):
             batch = items[i : i + batch_size]
             seqs = [b["seq"] for b in batch]
-            enc = tok(seqs, return_tensors="pt", padding=True)
-            ids = enc["input_ids"].to(device)
-            attn = enc["attention_mask"].to(device)
+
+            # Use score_sequence for bp-level scoring
             with torch.no_grad():
-                logits = m(input_ids=ids, attention_mask=attn).logits
-            logp = F.log_softmax(logits.float(), dim=-1)[:, :-1, :]
-            targets = ids[:, 1:]
-            mask = attn[:, 1:].float()
-            seq_logp = (logp.gather(2, targets.unsqueeze(-1)).squeeze(-1) * mask).sum(dim=1).cpu().numpy()
+                if len(seqs) == 1:
+                    _, actual_probs = m.score_sequence(seqs[0])
+                    actual_probs_list = [actual_probs]
+                else:
+                    _, actual_probs_list = m.score_sequence(seqs)
+
+            # Compute log-likelihood for each sequence
             for j, b in enumerate(batch):
-                out.append((b["uid"], float(seq_logp[j])))
+                log_likelihood = torch.log(actual_probs_list[j]).mean().item()
+                out.append((b["uid"], float(log_likelihood)))
+
             pbar.update(len(batch))
     return out
 
@@ -128,8 +131,8 @@ def score_hf(df: pd.DataFrame, args) -> tuple[np.ndarray, np.ndarray]:
     """Multi-GPU full-sequence LL scoring across ref+var sequences."""
     items = []
     for i, row in df.iterrows():
-        items.append({"uid": f"{i}_ref", "seq": _wrap(row["ref_seq"], args.add_dna_tag)})
-        items.append({"uid": f"{i}_var", "seq": _wrap(row["var_seq"], args.add_dna_tag)})
+        items.append({"uid": f"{i}_ref", "seq": row["ref_seq"]})
+        items.append({"uid": f"{i}_var", "seq": row["var_seq"]})
 
     # Dedup identical sequences (many variants share the same ref window)
     seen, uniq = {}, []
@@ -159,8 +162,8 @@ def score_hf(df: pd.DataFrame, args) -> tuple[np.ndarray, np.ndarray]:
     uid_to_logp = {uid: lp for shard in results for uid, lp in shard}
     seq_to_logp = {it["seq"]: uid_to_logp[it["uid"]] for it in uniq if it["uid"] in uid_to_logp}
 
-    ref = np.array([seq_to_logp[_wrap(r["ref_seq"], args.add_dna_tag)] for _, r in df.iterrows()])
-    var = np.array([seq_to_logp[_wrap(r["var_seq"], args.add_dna_tag)] for _, r in df.iterrows()])
+    ref = np.array([seq_to_logp[r["ref_seq"]] for _, r in df.iterrows()])
+    var = np.array([seq_to_logp[r["var_seq"]] for _, r in df.iterrows()])
     return ref, var
 
 
