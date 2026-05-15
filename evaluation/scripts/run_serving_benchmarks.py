@@ -23,6 +23,7 @@ EVO2_BENCHMARK_SCRIPT = REPO_ROOT / "evaluation" / "scripts" / "benchmark_evo2_s
 DEFAULT_OUTPUT_ROOT = REPO_ROOT / "scratch" / "serving_benchmarks"
 DEFAULT_CARBON_MODEL = "HuggingFaceBio/Carbon-3B"
 DEFAULT_CARBON_DRAFT_MODEL = "HuggingFaceBio/Carbon-500M"
+DEFAULT_CARBON_VLLM_ARCHITECTURE_OVERRIDE = "LlamaForCausalLM"
 DEFAULT_GENERATOR_MODEL = "GenerTeam/GENERator-v2-eukaryote-3b-base"
 DEFAULT_EVO2_MODEL = "evo2_7b"
 SUMMARY_FIELDS = [
@@ -68,6 +69,7 @@ class RunSpec:
     draft_model: str | None = None
     num_speculative_tokens: int | None = None
     speculative_config: dict | None = None
+    server_extra_args: list[str] = field(default_factory=list)
     requires_probe: bool = False
     skip_on_probe_failure: bool = True
     skip_reason: str = ""
@@ -97,7 +99,42 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-bp", type=int, default=1000)
     parser.add_argument("--bp-per-token", type=int, default=6)
     parser.add_argument("--carbon-model", default=DEFAULT_CARBON_MODEL)
+    parser.add_argument(
+        "--carbon-revision",
+        default=None,
+        help="Target Carbon model revision passed to vLLM --revision.",
+    )
+    parser.add_argument(
+        "--carbon-code-revision",
+        default=None,
+        help="Target Carbon code revision passed to vLLM --code-revision.",
+    )
+    parser.add_argument(
+        "--carbon-tokenizer-revision",
+        default=None,
+        help="Target Carbon tokenizer revision passed to vLLM --tokenizer-revision.",
+    )
     parser.add_argument("--carbon-draft-model", default=DEFAULT_CARBON_DRAFT_MODEL)
+    parser.add_argument(
+        "--carbon-draft-revision",
+        default=None,
+        help="Draft Carbon model revision recorded in --speculative-config.",
+    )
+    parser.add_argument(
+        "--carbon-draft-code-revision",
+        default=None,
+        help="Draft Carbon code revision recorded in --speculative-config.",
+    )
+    parser.add_argument(
+        "--carbon-vllm-architecture-override",
+        default=DEFAULT_CARBON_VLLM_ARCHITECTURE_OVERRIDE,
+        help=(
+            "HF architecture override for Carbon vLLM servers. The default "
+            "forces vLLM's native Llama implementation and avoids the "
+            "Transformers-backend attention-name collision in speculative "
+            "decoding. Pass an empty value to disable."
+        ),
+    )
     parser.add_argument(
         "--carbon-speculative-tokens",
         type=int,
@@ -174,6 +211,18 @@ def normalize_hf_repo_id(repo_id: str) -> str:
     if repo_id.startswith(prefix):
         return repo_id[len(prefix) :]
     return repo_id
+
+
+def normalize_evo2_model_name(model_name: str) -> str:
+    prefix = "arcinstitute/"
+    if model_name.startswith(prefix):
+        return model_name[len(prefix) :]
+    return model_name
+
+
+def evo2_run_name(model_name: str) -> str:
+    normalized_model_name = normalize_evo2_model_name(model_name).replace("_", "-")
+    return sanitize_path_component(normalized_model_name)
 
 
 def load_sequence_recovery_rows(args: argparse.Namespace) -> list[dict]:
@@ -388,6 +437,7 @@ def build_vllm_server_command(args: argparse.Namespace, spec: RunSpec) -> list[s
     if spec.speculative_config:
         speculative_config = json.dumps(spec.speculative_config, separators=(",", ":"))
         command.extend(["--speculative-config", speculative_config])
+    command.extend(spec.server_extra_args)
     command.extend(args.vllm_extra_arg)
     return command
 
@@ -475,6 +525,38 @@ def build_evo2_command(args: argparse.Namespace, spec: RunSpec) -> list[str]:
     return command
 
 
+def carbon_server_extra_args(args: argparse.Namespace) -> list[str]:
+    extra_args = []
+    if args.carbon_revision:
+        extra_args.extend(["--revision", args.carbon_revision])
+    if args.carbon_code_revision:
+        extra_args.extend(["--code-revision", args.carbon_code_revision])
+    if args.carbon_tokenizer_revision:
+        extra_args.extend(["--tokenizer-revision", args.carbon_tokenizer_revision])
+
+    architecture = args.carbon_vllm_architecture_override.strip()
+    if not architecture:
+        return extra_args
+    hf_overrides = {"architectures": [architecture]}
+    extra_args.extend(
+        ["--hf-overrides", json.dumps(hf_overrides, separators=(",", ":"))]
+    )
+    return extra_args
+
+
+def carbon_speculative_config(args: argparse.Namespace, token_count: int) -> dict:
+    config = {
+        "model": args.carbon_draft_model,
+        "num_speculative_tokens": token_count,
+        "draft_tensor_parallel_size": 1,
+    }
+    if args.carbon_draft_revision:
+        config["revision"] = args.carbon_draft_revision
+    if args.carbon_draft_code_revision:
+        config["code_revision"] = args.carbon_draft_code_revision
+    return config
+
+
 def check_speculative_vocab_compatibility(
     target_model: str,
     draft_model: str,
@@ -554,6 +636,18 @@ def build_run_specs(
         )
 
     if not args.skip_carbon:
+        carbon_extra_args = carbon_server_extra_args(args)
+        carbon_metadata = {
+            "prompt_family": "carbon",
+            "carbon_revision": args.carbon_revision or "",
+            "carbon_code_revision": args.carbon_code_revision or "",
+            "carbon_tokenizer_revision": args.carbon_tokenizer_revision or "",
+            "carbon_draft_revision": args.carbon_draft_revision or "",
+            "carbon_draft_code_revision": args.carbon_draft_code_revision or "",
+            "vllm_architecture_override": (
+                args.carbon_vllm_architecture_override.strip()
+            ),
+        }
         specs.append(
             RunSpec(
                 name="carbon-3b-vllm",
@@ -562,7 +656,8 @@ def build_run_specs(
                 prompt_file=Path(prompt_files["carbon"]),
                 run_dir=run_dir / "carbon-3b-vllm",
                 served_model_name="carbon-3b-vllm",
-                metadata={"prompt_family": "carbon"},
+                server_extra_args=carbon_extra_args,
+                metadata=carbon_metadata,
             )
         )
         if not args.skip_speculative:
@@ -578,25 +673,30 @@ def build_run_specs(
                         served_model_name=f"carbon-3b-spec-{token_count}",
                         draft_model=args.carbon_draft_model,
                         num_speculative_tokens=token_count,
-                        speculative_config={
-                            "model": args.carbon_draft_model,
-                            "num_speculative_tokens": token_count,
-                            "draft_tensor_parallel_size": 1,
-                        },
+                        speculative_config=carbon_speculative_config(
+                            args, token_count
+                        ),
+                        server_extra_args=carbon_extra_args,
                         skip_reason=skip_reason,
-                        metadata={"prompt_family": "carbon"},
+                        metadata=carbon_metadata,
                     )
                 )
 
     if not args.skip_evo2:
+        normalized_evo2_model = normalize_evo2_model_name(args.evo2_model)
+        evo2_name = evo2_run_name(args.evo2_model)
         specs.append(
             RunSpec(
-                name="evo2-7b",
+                name=evo2_name,
                 backend="evo2",
-                model=args.evo2_model,
+                model=normalized_evo2_model,
                 prompt_file=Path(prompt_files["evo2"]),
-                run_dir=run_dir / "evo2-7b",
-                metadata={"prompt_family": "evo2"},
+                run_dir=run_dir / evo2_name,
+                metadata={
+                    "prompt_family": "evo2",
+                    "requested_model": args.evo2_model,
+                    "normalized_model": normalized_evo2_model,
+                },
             )
         )
 
