@@ -32,7 +32,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--num-prompts",
         type=int,
-        default=10,
+        default=16,
         help="Number of prompts to benchmark. <=0 uses every JSONL row.",
     )
     parser.add_argument(
@@ -72,6 +72,16 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=0,
         help="Number of initial requests to run before measured requests",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=1,
+        help=(
+            "Number of same-length prompts to generate together. Values greater "
+            "than 1 require prompts in each batch to have the same length and "
+            "output_tokens."
+        ),
     )
     parser.add_argument(
         "--label",
@@ -232,6 +242,113 @@ def run_one_request(model, request: dict, args: argparse.Namespace) -> dict:
         }
 
 
+def run_batch_requests(
+    model,
+    requests: list[dict],
+    args: argparse.Namespace,
+) -> list[dict]:
+    if len(requests) == 1:
+        return [run_one_request(model, requests[0], args)]
+
+    from vortex.model.generation import Generator, prepare_batch
+
+    output_tokens = int(requests[0]["output_tokens"])
+    prompt_lengths = {len(request["prompt"]) for request in requests}
+    output_lengths = {int(request["output_tokens"]) for request in requests}
+    if len(prompt_lengths) != 1 or len(output_lengths) != 1:
+        return [run_one_request(model, request, args) for request in requests]
+
+    step_times = []
+    generator = Generator(
+        model.model,
+        model.tokenizer,
+        top_k=args.top_k,
+        top_p=args.top_p,
+        temperature=args.temperature,
+    )
+
+    def token_callback(_step_index):
+        synchronize_cuda()
+        step_times.append(time.perf_counter())
+
+    prompts = [request["prompt"] for request in requests]
+    synchronize_cuda()
+    start_perf = time.perf_counter()
+    start_wall = time.time()
+    try:
+        input_ids, _lengths = prepare_batch(
+            prompts,
+            model.tokenizer,
+            prepend_bos=False,
+            device="cuda:0",
+        )
+        output_ids, _logits, _inference_params = generator.generate(
+            device="cuda:0",
+            input_ids=input_ids,
+            num_tokens=output_tokens,
+            cached_generation=True,
+            print_generation=False,
+            verbose=False,
+            stop_at_eos=False,
+            force_prompt_threshold=args.force_prompt_threshold,
+            token_callback=token_callback,
+        )
+        synchronize_cuda()
+        end_perf = time.perf_counter()
+        generated_texts = list(model.tokenizer.detokenize_batch(output_ids))
+        ttft = step_times[0] - start_perf if step_times else 0.0
+        itls = [
+            step_times[index] - step_times[index - 1]
+            for index in range(1, len(step_times))
+        ]
+        latency = end_perf - start_perf
+        details = []
+        for index, request in enumerate(requests):
+            generated_text = (
+                generated_texts[index] if index < len(generated_texts) else ""
+            )
+            actual_output_len = len(generated_text) or output_tokens
+            details.append(
+                {
+                    "success": True,
+                    "request_id": request.get("request_id"),
+                    "prompt_len": len(request["prompt"]),
+                    "output_len": actual_output_len,
+                    "expected_output_len": output_tokens,
+                    "ttft": ttft,
+                    "itl": itls,
+                    "latency": latency,
+                    "start_time": start_wall,
+                    "generated_text": generated_text,
+                    "error": "",
+                    "metadata": request.get("metadata", {}),
+                    "batch_size": len(requests),
+                }
+            )
+        return details
+    except Exception as exc:
+        synchronize_cuda()
+        end_perf = time.perf_counter()
+        return [
+            {
+                "success": False,
+                "request_id": request.get("request_id"),
+                "prompt_len": len(request["prompt"]),
+                "output_len": 0,
+                "expected_output_len": int(request["output_tokens"]),
+                "ttft": 0.0,
+                "itl": [],
+                "latency": end_perf - start_perf,
+                "start_time": start_wall,
+                "generated_text": "",
+                "error": repr(exc),
+                "metadata": request.get("metadata", {}),
+                "batch_size": len(requests),
+            }
+            for request in requests
+        ]
+
+
 def summarize_results(
     requests: list[dict],
     details: list[dict],
@@ -261,6 +378,7 @@ def summarize_results(
         "model_id": args.model,
         "tokenizer_id": args.model,
         "num_prompts": len(requests),
+        "batch_size": max(1, args.batch_size),
         "duration": duration,
         "completed": completed,
         "failed": len(failures),
@@ -294,7 +412,7 @@ def summarize_results(
         "std_e2el_ms": std_ms(e2els),
         "p99_e2el_ms": p99_ms(e2els),
         "max_output_tokens_per_s": 0.0,
-        "max_concurrent_requests": 1 if completed else 0,
+        "max_concurrent_requests": min(max(1, args.batch_size), completed),
         "rtfx": 0.0,
     }
     return result
@@ -356,12 +474,25 @@ def main() -> None:
     model = load_evo2_model(args.model)
 
     warmups = requests[: args.num_warmups]
-    for request in warmups:
-        _ = run_one_request(model, request, args)
+    batch_size = max(1, args.batch_size)
+    for batch_start in range(0, len(warmups), batch_size):
+        _ = run_batch_requests(
+            model,
+            warmups[batch_start : batch_start + batch_size],
+            args,
+        )
 
     measured_requests = requests
     benchmark_start = time.perf_counter()
-    details = [run_one_request(model, request, args) for request in measured_requests]
+    details = []
+    for batch_start in range(0, len(measured_requests), batch_size):
+        details.extend(
+            run_batch_requests(
+                model,
+                measured_requests[batch_start : batch_start + batch_size],
+                args,
+            )
+        )
     synchronize_cuda()
     duration = time.perf_counter() - benchmark_start
 

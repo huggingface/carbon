@@ -93,7 +93,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--data-repo", default="GenerTeam/sequence-recovery")
     parser.add_argument("--data-config", default="eukaryote")
     parser.add_argument("--split", default="test")
-    parser.add_argument("--num-prompts", type=int, default=10)
+    parser.add_argument("--num-prompts", type=int, default=16)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--input-bp", type=int, default=1000)
     parser.add_argument("--output-bp", type=int, default=1000)
@@ -195,6 +195,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--evo2-temperature", type=float, default=1.0)
     parser.add_argument("--evo2-top-k", type=int, default=1)
     parser.add_argument("--evo2-top-p", type=float, default=0.0)
+    parser.add_argument("--evo2-batch-size", type=int, default=1)
     parser.add_argument("--evo2-force-prompt-threshold", type=int, default=None)
     parser.add_argument("--prepare-only", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
@@ -223,6 +224,10 @@ def normalize_evo2_model_name(model_name: str) -> str:
 def evo2_run_name(model_name: str) -> str:
     normalized_model_name = normalize_evo2_model_name(model_name).replace("_", "-")
     return sanitize_path_component(normalized_model_name)
+
+
+def model_run_name(model_name: str) -> str:
+    return sanitize_path_component(model_name.rsplit("/", 1)[-1].lower())
 
 
 def load_sequence_recovery_rows(args: argparse.Namespace) -> list[dict]:
@@ -515,6 +520,8 @@ def build_evo2_command(args: argparse.Namespace, spec: RunSpec) -> list[str]:
         str(args.evo2_top_k),
         "--top-p",
         str(args.evo2_top_p),
+        "--batch-size",
+        str(args.evo2_batch_size),
         "--label",
         spec.name,
     ]
@@ -636,6 +643,7 @@ def build_run_specs(
         )
 
     if not args.skip_carbon:
+        carbon_name = model_run_name(args.carbon_model)
         carbon_extra_args = carbon_server_extra_args(args)
         carbon_metadata = {
             "prompt_family": "carbon",
@@ -650,12 +658,12 @@ def build_run_specs(
         }
         specs.append(
             RunSpec(
-                name="carbon-3b-vllm",
+                name=f"{carbon_name}-vllm",
                 backend="vllm",
                 model=args.carbon_model,
                 prompt_file=Path(prompt_files["carbon"]),
-                run_dir=run_dir / "carbon-3b-vllm",
-                served_model_name="carbon-3b-vllm",
+                run_dir=run_dir / f"{carbon_name}-vllm",
+                served_model_name=f"{carbon_name}-vllm",
                 server_extra_args=carbon_extra_args,
                 metadata=carbon_metadata,
             )
@@ -665,12 +673,12 @@ def build_run_specs(
                 skip_reason = "" if spec_preflight_ok else spec_preflight_reason
                 specs.append(
                     RunSpec(
-                        name=f"carbon-3b-spec-{token_count}",
+                        name=f"{carbon_name}-spec-{token_count}",
                         backend="vllm",
                         model=args.carbon_model,
                         prompt_file=Path(prompt_files["carbon"]),
-                        run_dir=run_dir / f"carbon-3b-spec-{token_count}",
-                        served_model_name=f"carbon-3b-spec-{token_count}",
+                        run_dir=run_dir / f"{carbon_name}-spec-{token_count}",
+                        served_model_name=f"{carbon_name}-spec-{token_count}",
                         draft_model=args.carbon_draft_model,
                         num_speculative_tokens=token_count,
                         speculative_config=carbon_speculative_config(
