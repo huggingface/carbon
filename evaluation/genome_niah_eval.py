@@ -88,6 +88,8 @@ def parse_args() -> argparse.Namespace:
                    help="context length in Carbon-tokens (6 bp/token)")
     # HF backend
     p.add_argument("--bf16", action="store_true", help="HF: load model in bf16")
+    p.add_argument("--with_yarn", action="store_true",
+                   help="HF: load with YaRN rope scaling for 64k-token context")
     p.add_argument("--add_dna_tag", action="store_true",
                    help="HF: prepend `<dna>` (Carbon hybrid models)")
     p.add_argument("--add_bos", action="store_true", help="HF: prepend <s> (GENERator pure-DNA)")
@@ -179,18 +181,31 @@ def _prefix(args) -> str:
 
 
 def _load_hf(args):
-    from transformers import AutoModelForCausalLM, AutoTokenizer
+    from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
     from transformers_compat import patch_generator_sample, patch_legacy_tokenizer_base
 
     patch_legacy_tokenizer_base()
     tokenizer = AutoTokenizer.from_pretrained(args.model, revision=args.revision, trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+    model_kwargs = {
+        "revision": args.revision,
+        "torch_dtype": torch.bfloat16 if args.bf16 else torch.float32,
+        "attn_implementation": args.attn_implementation,
+        "device_map": "auto",
+    }
+    if args.with_yarn:
+        config = AutoConfig.from_pretrained(args.model, revision=args.revision, trust_remote_code=True)
+        config.max_position_embeddings = 65536
+        config.rope_scaling = {
+            "type": "yarn",
+            "factor": 4.0,
+            "original_max_position_embeddings": 32768,
+        }
+        model_kwargs["config"] = config
     model = AutoModelForCausalLM.from_pretrained(
-        args.model, revision=args.revision,
-        torch_dtype=torch.bfloat16 if args.bf16 else torch.float32,
-        attn_implementation=args.attn_implementation,
-        device_map="auto",
+        args.model,
+        **model_kwargs,
     )
     model.eval()
     patch_generator_sample(model)
@@ -445,6 +460,7 @@ def main():
         "model": args.model, "revision": args.revision, "backend": args.backend,
         "task": args.task, "ctx": args.ctx, "n_samples": int(len(res)),
         "shard_idx": args.shard_idx, "n_shards": args.n_shards,
+        "with_yarn": bool(args.with_yarn),
         "gen_exact_match": float(res["gen_exact_match"].mean()),
         "gen_base_accuracy": float(res["gen_base_accuracy"].mean()),
         "elapsed_sec": elapsed,
