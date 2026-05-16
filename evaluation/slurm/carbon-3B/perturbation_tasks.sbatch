@@ -20,22 +20,23 @@ OUT=${OUT:-results}
 MODEL=${MODEL:-HuggingFaceBio/Carbon-3B}
 
 TASK_SPECS=(
-    "tata_perturbation:tata"
-    "synonymous_codon_substitution:synonymous_codons"
-    "motif_human:motif_human"
-    "promoter_revcomp:promoter_revcomp"
-    "syn_human:syn_human"
-    "syn_mouse:syn_mouse"
+    "tata_perturbation:tata:train"
+    "synonymous_codon_substitution:synonymous_codons:train"
+    "motif_human:motif_human:test"
+    "promoter_revcomp:promoter_revcomp:test"
+    "syn_human:syn_human:test"
+    "syn_mouse:syn_mouse:test"
 )
 
 for TASK_SPEC in "${TASK_SPECS[@]}"; do
-    IFS=: read -r TASK_NAME OUT_SUBDIR <<< "$TASK_SPEC"
+    IFS=: read -r TASK_NAME OUT_SUBDIR SPLIT <<< "$TASK_SPEC"
     TASK_OUT="$OUT/$OUT_SUBDIR"
     mkdir -p "$TASK_OUT"
 
     "${UV_RUN[@]}" python "evaluation/perturbation_tasks.py" \
         --task "$TASK_NAME" \
         --model "$MODEL" \
+        --split "$SPLIT" \
         --bf16 \
         --output_dir "$TASK_OUT"
 done
