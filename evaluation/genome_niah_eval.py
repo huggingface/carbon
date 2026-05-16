@@ -197,11 +197,17 @@ def _load_hf(args):
     if args.with_yarn:
         config = AutoConfig.from_pretrained(args.model, revision=args.revision, trust_remote_code=True)
         config.max_position_embeddings = 65536
-        config.rope_scaling = {
+        rope_parameters = dict(getattr(config, "rope_parameters", {}) or {})
+        rope_theta = rope_parameters.get("rope_theta", getattr(config, "rope_theta", None))
+        yarn_rope_parameters = {
+            "rope_type": "yarn",
             "type": "yarn",
             "factor": 4.0,
             "original_max_position_embeddings": 32768,
         }
+        if rope_theta is not None:
+            yarn_rope_parameters["rope_theta"] = rope_theta
+        config.rope_scaling = yarn_rope_parameters
         model_kwargs["config"] = config
     model = AutoModelForCausalLM.from_pretrained(
         args.model,
