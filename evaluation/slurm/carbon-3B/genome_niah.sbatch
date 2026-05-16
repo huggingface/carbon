@@ -10,13 +10,13 @@
 
 # Genome-NIAH retrieval, Carbon (HF backend).
 # Override defaults via env vars:
-#   MODEL=...     HF repo or path (default lc32k-rope5M native)
+#   MODEL=...     HF repo or path (default Carbon-3B)
 #   TASK=...      niah | neardup_d4 | neardup_d2 | neardup_d1   (default niah)
-#   CTX=...       4096 | 8192 | 16384 | 32768 | 65536 | 131072  (default 32768)
+#   CTX=...       4096 | 8192 | 16384 | 32768 | 65536 | 131072  (default 65536)
 #
 # Run all (task, ctx) combos:
 #   for TASK in niah neardup_d4 neardup_d2 neardup_d1; do
-#     for CTX in 4096 8192 16384 32768; do
+#     for CTX in 4096 8192 16384 32768 65536 131072; do
 #       TASK=$TASK CTX=$CTX sbatch evaluation/slurm/carbon-3B/genome_niah.sbatch
 #     done
 #   done
@@ -25,9 +25,9 @@ set -euo pipefail
 UV_RUN=(uv run --group evaluation)
 
 OUT=results/genome_niah
-MODEL=${MODEL:-HuggingFaceBio/carbon-3B-longctx-32k-rope5M}
+MODEL=${MODEL:-HuggingFaceBio/Carbon-3B}
 TASK=${TASK:-niah}
-CTX=${CTX:-32768}
+CTX=${CTX:-65536}
 
 mkdir -p "$OUT"
 

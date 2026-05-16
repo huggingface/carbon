@@ -36,15 +36,10 @@ Metrics reported:
   ll_margin         LL(positive) − LL(negative)
 
 Examples:
-  # Carbon-lc32k native, 32 k native context
+  # Carbon-3B, 32k native context
   python genome_niah_eval.py \\
-      --model HuggingFaceBio/carbon-3B-longctx-32k-rope5M \\
+      --model HuggingFaceBio/Carbon-3B \\
       --task niah --ctx 32768 --add_dna_tag --bf16
-
-  # Carbon-lc32k + YaRN-4× extrapolated to 64k
-  python genome_niah_eval.py \\
-      --model HuggingFaceBio/carbon-3B-longctx-32k-rope5M-yarn4x \\
-      --task niah --ctx 65536 --add_dna_tag --bf16
 
   # GENERator-v2 3B at 16k
   python genome_niah_eval.py \\
