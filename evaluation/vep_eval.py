@@ -205,8 +205,6 @@ def main():
     print(f"  class distribution: {df['class'].value_counts().to_dict()}")
 
     score_fn = score_evo2 if args.backend == "evo2" else score_hf
-    if args.backend == "evo2" and args.add_dna_tag:
-        print("WARNING: --add_dna_tag ignored when --backend evo2 is set")
 
     t0 = time.time()
     ref_logp, var_logp = score_fn(df, args)

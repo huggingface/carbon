@@ -22,5 +22,5 @@ mkdir -p "$OUT"
 "${UV_RUN[@]}" python "evaluation/vep_eval.py" \
     --model "$MODEL" \
     --data_path hf://datasets/HuggingFaceBio/traitgym/mendelian_traits_vep.parquet \
-    --add_dna_tag --bf16 --rev_comp_avg \
+    --bf16 --rev_comp_avg \
     --output_dir "$OUT"

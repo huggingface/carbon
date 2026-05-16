@@ -19,5 +19,5 @@ mkdir -p "$OUT"
 
 "${UV_RUN[@]}" python "evaluation/sequence_recovery.py" \
     --model "$MODEL" \
-    --data_type eukaryote --bf16 \
+    --data_type eukaryote --add_bos --bf16 \
     --output_dir "$OUT"

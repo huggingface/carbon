@@ -28,5 +28,5 @@ mkdir -p "$OUT"
 "${UV_RUN[@]}" python "evaluation/genome_niah_eval.py" \
     --model "$MODEL" \
     --task "$TASK" --ctx "$CTX" \
-    --bf16 \
+    --add_bos --bf16 \
     --output_dir "$OUT"

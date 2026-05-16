@@ -22,5 +22,5 @@ mkdir -p "$OUT/brca2"
 "${UV_RUN[@]}" python "evaluation/vep_eval.py" \
     --model "$MODEL" \
     --data_path hf://datasets/HuggingFaceBio/brca2-vep/brca2_vep.parquet \
-    --add_dna_tag --bf16 \
+    --bf16 \
     --output_dir "$OUT/brca2"

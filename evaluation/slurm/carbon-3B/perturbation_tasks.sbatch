@@ -24,11 +24,11 @@ mkdir -p "$OUT/tata" "$OUT/synonymous_codons"
 "${UV_RUN[@]}" python "evaluation/perturbation_tasks.py" \
     --task tata_perturbation \
     --model "$MODEL" \
-    --add_dna_tag --bf16 \
+    --bf16 \
     --output_dir "$OUT/tata"
 
 "${UV_RUN[@]}" python "evaluation/perturbation_tasks.py" \
     --task synonymous_codon_substitution \
     --model "$MODEL" \
-    --add_dna_tag --bf16 \
+    --bf16 \
     --output_dir "$OUT/synonymous_codons"
