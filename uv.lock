@@ -232,6 +232,7 @@ evaluation = [
 evo2 = [
     { name = "evo2" },
     { name = "flash-attn" },
+    { name = "onnx" },
     { name = "transformer-engine", extra = ["core-cu12", "pytorch"] },
 ]
 
@@ -248,6 +249,7 @@ evaluation = [{ name = "pandas", specifier = ">=3.0.3" }]
 evo2 = [
     { name = "evo2", specifier = "==0.5.5" },
     { name = "flash-attn", specifier = "==2.8.0.post2" },
+    { name = "onnx", specifier = ">=1.21.0" },
     { name = "transformer-engine", extras = ["core-cu12", "pytorch"], specifier = "==2.13.0" },
 ]
 

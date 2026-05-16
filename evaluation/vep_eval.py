@@ -93,7 +93,11 @@ def _shard_worker(args):
     torch.cuda.set_device(shard_id)
     device = f"cuda:{shard_id}"
 
-    from transformers_compat import patch_generator_sample, patch_legacy_tokenizer_base
+    from transformers_compat import (
+        patch_generator_sample,
+        patch_legacy_tokenizer_base,
+        score_dna_sequence_fallback,
+    )
 
     patch_legacy_tokenizer_base()
     tok = AutoTokenizer.from_pretrained(model, revision=revision, trust_remote_code=True)
@@ -112,11 +116,13 @@ def _shard_worker(args):
 
             # Use score_sequence for bp-level scoring
             with torch.no_grad():
-                if len(seqs) == 1:
+                if len(seqs) == 1 and hasattr(m, "score_sequence"):
                     _, actual_probs = m.score_sequence(seqs[0])
                     actual_probs_list = [actual_probs]
-                else:
+                elif hasattr(m, "score_sequence"):
                     _, actual_probs_list = m.score_sequence(seqs)
+                else:
+                    _, actual_probs_list = score_dna_sequence_fallback(m, tok, seqs)
 
             # Compute log-likelihood for each sequence
             for j, b in enumerate(batch):

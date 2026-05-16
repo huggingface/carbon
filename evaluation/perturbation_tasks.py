@@ -91,17 +91,20 @@ def score_hf(model, tok, seqs, max_length: int, batch_size: int):
     """Mean log-prob per token (or per base if model has score_sequence)."""
     out = []
 
-    # Use score_sequence for bp-level scoring
     for i in tqdm(range(0, len(seqs), batch_size), desc="scoring (bp-level)"):
         batch = seqs[i : i + batch_size]
         # Truncate sequences if needed
         batch = [s[:max_length] if len(s) > max_length else s for s in batch]
 
-        if len(batch) == 1:
+        if len(batch) == 1 and hasattr(model, "score_sequence"):
             _, actual_probs = model.score_sequence(batch[0])
             actual_probs_list = [actual_probs]
-        else:
+        elif hasattr(model, "score_sequence"):
             _, actual_probs_list = model.score_sequence(batch)
+        else:
+            from transformers_compat import score_dna_sequence_fallback
+
+            _, actual_probs_list = score_dna_sequence_fallback(model, tok, batch)
 
         # Compute mean log-prob per base
         for actual_probs in actual_probs_list:
