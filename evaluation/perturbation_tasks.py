@@ -55,6 +55,10 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 TASKS = {
     "tata_perturbation":             {"pos": "original_sequence", "neg": "sequence", "subset": "tata"},
     "synonymous_codon_substitution": {"pos": "original_sequence", "neg": "sequence", "subset": "synonymous_codons"},
+    "motif_human":                   {"pos": "original_sequence", "neg": "sequence", "subset": "motif_human"},
+    "promoter_revcomp":              {"pos": "original_sequence", "neg": "sequence", "subset": "promoter_revcomp"},
+    "syn_human":                     {"pos": "original_sequence", "neg": "sequence", "subset": "syn_human"},
+    "syn_mouse":                     {"pos": "original_sequence", "neg": "sequence", "subset": "syn_mouse"},        
 }
 
 
@@ -67,7 +71,7 @@ def parse_args():
     p.add_argument("--dataset", default="HuggingFaceBio/carbon-perturbation-bench")
     p.add_argument("--subset", default=None,
                    help="HF dataset config. Defaults to the per-task subset "
-                        "(`tata` / `synonymous_codons`).")
+                        "(`tata` / `synonymous_codons` / `motif_human` / `promoter_revcomp` / `syn_human` / `syn_mouse`).")
     p.add_argument("--split", default="train")
     p.add_argument("--output_dir", default="./results/perturbation_tasks")
     p.add_argument("--max_length", type=int, default=2048)
