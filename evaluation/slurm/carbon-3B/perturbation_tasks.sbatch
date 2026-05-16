@@ -16,8 +16,8 @@ source ~/.bashrc
 set -euo pipefail
 UV_RUN=(uv run --group evaluation)
 
-OUT=results
-MODEL=HuggingFaceBio/Carbon-3B
+OUT=${OUT:-results}
+MODEL=${MODEL:-HuggingFaceBio/Carbon-3B}
 
 mkdir -p "$OUT/tata" "$OUT/synonymous_codons"
 
