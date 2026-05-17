@@ -10,9 +10,11 @@
 
 source ~/.bashrc
 set -euo pipefail
-UV_RUN=(uv run --group evaluation)
+UV_RUN=(uv run --no-sync --group evaluation)
+RUN_SHA=${RUN_SHA:-$(git rev-parse --short=12 HEAD)}
+OUT_ROOT=${OUT_ROOT:-results/$RUN_SHA}
 
-OUT=results/sequence_recovery
+OUT="$OUT_ROOT/sequence_recovery"
 MODEL=GenerTeam/GENERator-v2-eukaryote-1.2b-base
 
 mkdir -p "$OUT"

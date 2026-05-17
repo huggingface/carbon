@@ -23,9 +23,11 @@
 #   POOL=...      max_samples cap (default: use all 500/cell)
 source ~/.bashrc
 set -euo pipefail
-UV_RUN=(uv run --group evaluation)
+UV_RUN=(uv run --no-sync --group evaluation --group evo2)
+RUN_SHA=${RUN_SHA:-$(git rev-parse --short=12 HEAD)}
+OUT_ROOT=${OUT_ROOT:-results/$RUN_SHA}
 
-OUT=${OUT:-results/genome_niah}
+OUT="$OUT_ROOT/genome_niah"
 MODEL=${MODEL:-arcinstitute/evo2_40b}
 TASK=${TASK:-niah}
 CTX=${CTX:-32768}

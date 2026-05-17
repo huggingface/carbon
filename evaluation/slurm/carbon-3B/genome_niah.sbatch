@@ -22,10 +22,13 @@
 #   done
 source ~/.bashrc
 set -euo pipefail
-UV_RUN=(uv run --group evaluation)
+UV_RUN=(uv run --no-sync --group evaluation)
+RUN_SHA=${RUN_SHA:-$(git rev-parse --short=12 HEAD)}
+OUT_ROOT=${OUT_ROOT:-results/$RUN_SHA}
 
-OUT=results/genome_niah
+OUT="$OUT_ROOT/genome_niah"
 MODEL=${MODEL:-HuggingFaceBio/Carbon-3B}
+MODEL_SHORT_NAME=${MODEL_SHORT_NAME:-Carbon-3B-yarn}
 TASK=${TASK:-niah}
 CTX=${CTX:-65536}
 
@@ -35,4 +38,5 @@ mkdir -p "$OUT"
     --model "$MODEL" \
     --task "$TASK" --ctx "$CTX" \
     --add_dna_tag --bf16 \
+    --with_yarn --model_short_name "$MODEL_SHORT_NAME" \
     --output_dir "$OUT"

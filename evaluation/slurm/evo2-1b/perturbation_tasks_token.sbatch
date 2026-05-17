@@ -12,9 +12,11 @@
 
 source ~/.bashrc
 set -euo pipefail
-UV_RUN=(uv run --group evaluation)
+UV_RUN=(uv run --no-sync --group evaluation --group evo2)
+RUN_SHA=${RUN_SHA:-$(git rev-parse --short=12 HEAD)}
+OUT_ROOT=${OUT_ROOT:-results/$RUN_SHA}
 
-OUT=${OUT:-results/perturbation_tasks_token}
+OUT="$OUT_ROOT/perturbation_tasks_token"
 MODEL=${MODEL:-arcinstitute/evo2_1b_base}
 
 TASK_SPECS=(
