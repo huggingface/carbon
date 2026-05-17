@@ -73,8 +73,11 @@ def parse_args():
     p.add_argument("--revision", default=None)
     p.add_argument("--backend", choices=["hf", "evo2"], default="hf")
     p.add_argument("--dataset", default="HuggingFaceBio/carbon-perturbation-bench")
-    p.add_argument("--subset", default=None,
-                   help="HF dataset config. Defaults to the per-task subset "
+    p.add_argument(
+        "--subset",
+        default=None,
+        help="HF dataset config. Defaults to the per-task subset.",
+    )
     p.add_argument("--split", default="test")
     p.add_argument("--output_dir", default="./results/perturbation_tasks")
     p.add_argument("--max_length", type=int, default=8192)
