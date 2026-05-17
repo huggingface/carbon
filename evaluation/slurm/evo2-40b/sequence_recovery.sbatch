@@ -22,5 +22,5 @@ mkdir -p "$OUT"
 
 "${UV_RUN[@]}" python "evaluation/sequence_recovery.py" \
     --model "$MODEL" --backend evo2 \
-    --data_type eukaryote --gen_len_bp 30 --bf16 \
+    --data_type eukaryote --gen_len_bp 30 --bf16 --batch_size 1 \
     --output_dir "$OUT"
