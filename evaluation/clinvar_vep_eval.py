@@ -265,10 +265,48 @@ def _evo2_shard(args):
     return p_ref, p_alt
 
 
+def _compute_probs_evo2_model_parallel(sequences, refs, alts, model_name: str, batch_size: int):
+    """Evo2 scoring path for models that need all visible GPUs."""
+    from evo2_runtime import preload_cudnn_libraries
+
+    preload_cudnn_libraries()
+    from evo2 import Evo2
+    from evo2.scoring import prepare_batch
+
+    torch.cuda.set_device(0)
+    model = Evo2(model_name)
+
+    base_ids = {}
+    for b in "ACGT":
+        ids = model.tokenizer.tokenize(b)
+        base_ids[b] = ids[0] if ids else None
+
+    p_ref, p_alt = [], []
+    for i in tqdm(range(0, len(sequences), batch_size), desc="evo2"):
+        batch_seqs = sequences[i : i + batch_size]
+        batch_refs = refs[i : i + batch_size]
+        batch_alts = alts[i : i + batch_size]
+        input_ids, seq_lengths = prepare_batch(batch_seqs, model.tokenizer, device="cuda:0")
+        with torch.inference_mode():
+            output, _ = model(input_ids)
+            logits = output[0] if isinstance(output, tuple) else output
+        for j in range(len(batch_seqs)):
+            last = logits[j, seq_lengths[j] - 1, :]
+            probs = torch.softmax(last, dim=0)
+            rid, aid = base_ids.get(batch_refs[j]), base_ids.get(batch_alts[j])
+            p_ref.append(float(probs[rid]) if rid is not None else 0.0)
+            p_alt.append(float(probs[aid]) if aid is not None else 0.0)
+    return np.array(p_ref), np.array(p_alt)
+
+
 def compute_probs_evo2(df: pd.DataFrame, model_name: str, batch_size: int):
     sequences = df["sequence"].tolist()
     refs = df["ref"].tolist()
     alts = df["alt"].tolist()
+    model_name = model_name.split("/")[-1]
+    if model_name in {"evo2_40b", "evo2_40b_base"}:
+        return _compute_probs_evo2_model_parallel(sequences, refs, alts, model_name, batch_size)
+
     n_gpus = torch.cuda.device_count()
     if n_gpus == 0:
         raise RuntimeError("No GPU available")
@@ -277,7 +315,7 @@ def compute_probs_evo2(df: pd.DataFrame, model_name: str, batch_size: int):
         (g, sequences[g * shard_size : (g + 1) * shard_size],
          refs[g * shard_size : (g + 1) * shard_size],
          alts[g * shard_size : (g + 1) * shard_size],
-         model_name.split("/")[-1], batch_size)
+         model_name, batch_size)
         for g in range(n_gpus)
         if g * shard_size < len(sequences)
     ]

@@ -384,9 +384,10 @@ def evo2_eval(args, df) -> pd.DataFrame:
 
     preload_cudnn_libraries()
     from evo2 import Evo2
-    print(f"Loading Evo2 model: {args.model}")
+    model_name = args.model.split("/")[-1]
+    print(f"Loading Evo2 model: {model_name}")
     t0 = time.time()
-    model = Evo2(args.model)
+    model = Evo2(model_name)
     print(f"loaded in {time.time()-t0:.1f}s")
     tokenizer = model.tokenizer
     device = "cuda:0"
