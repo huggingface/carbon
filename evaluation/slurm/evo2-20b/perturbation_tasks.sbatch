@@ -35,6 +35,6 @@ for TASK_SPEC in "${TASK_SPECS[@]}"; do
         --task "$TASK_NAME" \
         --model "$MODEL" --backend evo2 \
         --split "$SPLIT" \
-        --bf16 \
+        --bf16 --batch_size 1 \
         --output_dir "$TASK_OUT"
 done
