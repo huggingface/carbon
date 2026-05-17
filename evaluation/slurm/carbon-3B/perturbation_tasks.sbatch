@@ -5,12 +5,10 @@
 #SBATCH --partition=hopper-prod
 #SBATCH --qos=normal
 #SBATCH --nodes=1
-#SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=16
-#SBATCH --mem=128G
+#SBATCH --gres=gpu:8
 #SBATCH --time=02:00:00
 
-# Perturbation tasks chained on 1 GPU.
+# Perturbation tasks chained on 8 GPUs (multi-GPU support).
 
 source ~/.bashrc
 set -euo pipefail
@@ -20,12 +18,10 @@ OUT=${OUT:-results}
 MODEL=${MODEL:-HuggingFaceBio/Carbon-3B}
 
 TASK_SPECS=(
-    "tata_perturbation:tata:train"
-    "synonymous_codon_substitution:synonymous_codons:train"
     "motif_human:motif_human:test"
-    "promoter_revcomp:promoter_revcomp:test"
     "syn_human:syn_human:test"
     "syn_mouse:syn_mouse:test"
+    "promoter_revcomp:promoter_revcomp:test"
 )
 
 for TASK_SPEC in "${TASK_SPECS[@]}"; do

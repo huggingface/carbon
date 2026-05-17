@@ -1,40 +1,45 @@
 """
-Sequence-level perturbation tasks: TATA perturbation and synonymous codon substitution.
+Sequence-level perturbation tasks: motif disruption, synonymous codon substitution, and promoter reverse-complement.
 
-Both apply a structural perturbation to a real biological sequence (motif
-disruption or codon swap) and ask whether the model assigns higher
-log-likelihood to the unperturbed version. Distinct from VEP, which scores
-single-nucleotide variants and reports AUROC of the LL delta.
+Each task applies a structural perturbation to a real biological sequence and asks
+whether the model assigns higher log-likelihood to the unperturbed version. Distinct
+from VEP, which scores single-nucleotide variants and reports AUROC of the LL delta.
 
-  tata_perturbation:
-    Disrupt TATA-box motifs in promoters with random substitutions. The model
-    should score the intact promoter higher than the perturbed one.
-    Dataset: HuggingFaceBio/carbon-perturbation-bench  cols: original_sequence (real), sequence (perturbed)
+Available tasks:
+  motif_human:
+    Insert a tiled CAG repeat (10 consecutive CAG codons) into the CDS, creating
+    a synthetic polyglutamine expansion. The model should score the original
+    sequence higher than the perturbed one with the CAG insertion.
 
-  synonymous_codon_substitution:
+  syn_human / syn_mouse:
     Replace codons in a CDS with synonyms encoding the same amino acid. The
     real codon usage should be preferred over the synonymous variant.
-    Dataset: HuggingFaceBio/carbon-perturbation-bench  cols: original_sequence (real), sequence (synonymous)
 
-Metric: pairwise discrimination accuracy = mean(LL(real) > LL(perturbed)).
+  promoter_revcomp:
+    Replace promoter sequences with their reverse-complement as a perturbation.
+    The model should score the original strand higher than the reverse-complement.
 
-Backends and tag flags work the same way as the other Carbon evals:
+Dataset: HuggingFaceBio/carbon-perturbation-bench
+Columns: original_sequence (real), sequence (perturbed)
+Metric: pairwise discrimination accuracy = mean(LL(real) > LL(perturbed))
+
+Backends:
   --backend hf       Carbon, GENERator, any HF causal LM
   --backend evo2     official Evo2 inference library
 
 Example:
   python perturbation_tasks.py \
-      --task tata_perturbation \
+      --task motif_human \
       --model HuggingFaceBio/Carbon-3B \
       --bf16
 
   python perturbation_tasks.py \
-      --task tata_perturbation \
+      --task syn_human \
       --model GenerTeam/GENERator-v2-eukaryote-3b-base \
       --bf16
 
   python perturbation_tasks.py \
-      --task synonymous_codon_substitution \
+      --task promoter_revcomp \
       --model evo2_7b --backend evo2 --bf16
 """
 
@@ -69,8 +74,7 @@ def parse_args():
     p.add_argument("--backend", choices=["hf", "evo2"], default="hf")
     p.add_argument("--dataset", default="HuggingFaceBio/carbon-perturbation-bench")
     p.add_argument("--subset", default=None,
-                   help="HF dataset config. Defaults to the per-task subset "
-                        "(`tata` / `synonymous_codons`).")
+                   help="HF dataset config. Defaults to the per-task subset.")
     p.add_argument("--split", default="test")
     p.add_argument("--output_dir", default="./results/perturbation_tasks")
     p.add_argument("--max_length", type=int, default=8192)
