@@ -15,10 +15,11 @@ set -euo pipefail
 UV_RUN=(uv run --group evaluation)
 
 
-OUT=results/sequence_recovery
+OUT=${OUT:-results/sequence_recovery}
+MODEL=${MODEL:-arcinstitute/evo2_7b}
 mkdir -p "$OUT"
 
 "${UV_RUN[@]}" python "evaluation/sequence_recovery.py" \
-    --model evo2_7b --backend evo2 \
+    --model "$MODEL" --backend evo2 \
     --data_type eukaryote --gen_len_bp 30 --bf16 \
     --output_dir "$OUT"

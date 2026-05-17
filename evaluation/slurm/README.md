@@ -16,6 +16,8 @@ carbon-3B/          → HuggingFaceBio/Carbon-3B   (also lc32k variants)
 generator-v2-3b/    → GenerTeam/GENERator-v2-eukaryote-3b-base
 evo2-1b/            → evo2_1b_base
 evo2-7b/            → evo2_7b
+evo2-20b/           → evo2_20b
+evo2-40b/           → evo2_40b
 ```
 
 | Script | Eval |
@@ -24,8 +26,12 @@ evo2-7b/            → evo2_7b
 | `vep_brca2.sbatch` | BRCA2 |
 | `vep_traitgym.sbatch` | TraitGym Mendelian (with `--rev_comp_avg`) |
 | `clinvar.sbatch` | ClinVar coding + non_coding (default 24 kb, `CONTEXT_LENGTH=48000` for 48 kb) |
-| `perturbation_tasks.sbatch` | TATA + synonymous codons |
+| `perturbation_tasks.sbatch` | Sequence-level perturbation tasks: motif, synonymous-codon, and promoter reverse-complement |
 | `genome_niah.sbatch` | Long-context retrieval. Defaults to `TASK=niah CTX=32768`. Override via env: see script header for a sweep example. |
+
+The Evo2 20B and 40B scripts request 8 GPUs by default. The larger checkpoints
+use vortex model-parallel loading in the eval scripts, and the 40B ClinVar path
+requires a single 8-GPU model-parallel instance rather than one model per GPU.
 
 Launch one model:
 ```bash

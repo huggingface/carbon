@@ -10,12 +10,12 @@
 #SBATCH --mem=512G
 #SBATCH --time=12:00:00
 
-# Genome-NIAH retrieval, Evo2-7B (vortex backend on 8 GPUs).
+# Genome-NIAH retrieval, Evo2 (vortex backend on 8 GPUs).
 # Long-ctx is slow — per-row time grows from ~3 min (8k) to ~14h (128k).
 # Use sharding to split a (task, ctx) cell across multiple jobs.
 #
 # Env overrides:
-#   MODEL=...     default evo2_1b_base
+#   MODEL=...     default arcinstitute/evo2_1b_base
 #   TASK=...      niah | neardup_d4 | neardup_d2 | neardup_d1
 #   CTX=...       4096 | 8192 | 16384 | 32768 | 65536 | 131072
 #   SHARD=...     0..N-1   (default 0)
@@ -32,9 +32,9 @@ set -euo pipefail
 UV_RUN=(uv run --group evaluation)
 
 
-OUT=results/genome_niah
+OUT=${OUT:-results/genome_niah}
 
-MODEL=${MODEL:-evo2_1b_base}
+MODEL=${MODEL:-arcinstitute/evo2_1b_base}
 TASK=${TASK:-niah}
 CTX=${CTX:-32768}
 SHARD=${SHARD:-0}

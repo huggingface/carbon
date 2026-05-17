@@ -15,11 +15,12 @@ set -euo pipefail
 UV_RUN=(uv run --group evaluation)
 
 
-OUT=results/traitgym
+OUT=${OUT:-results/traitgym}
+MODEL=${MODEL:-arcinstitute/evo2_1b_base}
 mkdir -p "$OUT"
 
 "${UV_RUN[@]}" python "evaluation/vep_eval.py" \
-    --model evo2_1b_base --backend evo2 \
+    --model "$MODEL" --backend evo2 \
     --data_path hf://datasets/HuggingFaceBio/traitgym/mendelian_traits_vep.parquet \
     --bf16 --rev_comp_avg \
     --output_dir "$OUT"

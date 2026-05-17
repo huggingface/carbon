@@ -19,17 +19,18 @@ UV_RUN=(uv run --group evaluation)
 
 
 CONTEXT_LENGTH=${CONTEXT_LENGTH:-24000}
-OUT=results/clinvar_${CONTEXT_LENGTH}
+OUT=${OUT:-results/clinvar_${CONTEXT_LENGTH}}
+MODEL=${MODEL:-arcinstitute/evo2_7b}
 mkdir -p "$OUT/coding" "$OUT/non_coding"
 
 "${UV_RUN[@]}" python "evaluation/clinvar_vep_eval.py" \
-    --model evo2_7b --backend evo2 \
+    --model "$MODEL" --backend evo2 \
     --clinvar_path hf://datasets/HuggingFaceBio/clinvar-vep-final/coding/clinvar_coding.parquet \
     --bf16 --context_length "$CONTEXT_LENGTH" \
     --output_dir "$OUT/coding"
 
 "${UV_RUN[@]}" python "evaluation/clinvar_vep_eval.py" \
-    --model evo2_7b --backend evo2 \
+    --model "$MODEL" --backend evo2 \
     --clinvar_path hf://datasets/HuggingFaceBio/clinvar-vep-final/non_coding/clinvar_non_coding.parquet \
     --bf16 --context_length "$CONTEXT_LENGTH" \
     --output_dir "$OUT/non_coding"

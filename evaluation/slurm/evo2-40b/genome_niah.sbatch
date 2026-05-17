@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=evo2-7b-niah
+#SBATCH --job-name=evo2-40b-niah
 #SBATCH --output=logs/%x-%j.out
 #SBATCH --error=logs/%x-%j.err
 #SBATCH --partition=hopper-prod
@@ -7,34 +7,26 @@
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:8
 #SBATCH --cpus-per-task=64
-#SBATCH --mem=512G
-#SBATCH --time=24:00:00
+#SBATCH --mem=1024G
+#SBATCH --time=72:00:00
 
-# Genome-NIAH retrieval, Evo2-7B (vortex backend on 8 GPUs).
-# Long-ctx is slow — per-row time grows from ~3 min (8k) to ~14h (128k).
-# Use sharding to split a (task, ctx) cell across multiple jobs.
+# Genome-NIAH retrieval, Evo2-40B (vortex backend on 8 GPUs).
+# Long-ctx is slow — use sharding to split a (task, ctx) cell across jobs.
 #
 # Env overrides:
-#   MODEL=...     default arcinstitute/evo2_7b
+#   MODEL=...     default arcinstitute/evo2_40b
 #   TASK=...      niah | neardup_d4 | neardup_d2 | neardup_d1
 #   CTX=...       4096 | 8192 | 16384 | 32768 | 65536 | 131072
 #   SHARD=...     0..N-1   (default 0)
-#   NSHARDS=...   N        (default 1; recommend 6 for ctx ≥ 32k)
+#   NSHARDS=...   N        (default 1; recommend many shards for ctx >= 32k)
 #   PREFILL=...   prefill_chars (default 4096)
 #   POOL=...      max_samples cap (default: use all 500/cell)
-#
-# Example — full sweep at ctx=32k using 6 shards × 8-GPU nodes:
-#   for SHARD in 0 1 2 3 4 5; do
-#     SHARD=$SHARD NSHARDS=6 CTX=32768 sbatch evaluation/slurm/evo2-7b/genome_niah.sbatch
-#   done
 source ~/.bashrc
 set -euo pipefail
 UV_RUN=(uv run --group evaluation)
 
-
 OUT=${OUT:-results/genome_niah}
-
-MODEL=${MODEL:-arcinstitute/evo2_7b}
+MODEL=${MODEL:-arcinstitute/evo2_40b}
 TASK=${TASK:-niah}
 CTX=${CTX:-32768}
 SHARD=${SHARD:-0}

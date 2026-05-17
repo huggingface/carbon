@@ -15,11 +15,12 @@ set -euo pipefail
 UV_RUN=(uv run --group evaluation)
 
 
-OUT=results
+OUT=${OUT:-results}
+MODEL=${MODEL:-arcinstitute/evo2_1b_base}
 mkdir -p "$OUT/brca2"
 
 "${UV_RUN[@]}" python "evaluation/vep_eval.py" \
-    --model evo2_1b_base --backend evo2 \
+    --model "$MODEL" --backend evo2 \
     --data_path hf://datasets/HuggingFaceBio/brca2-vep/brca2_vep.parquet \
     --bf16 \
     --output_dir "$OUT/brca2"
