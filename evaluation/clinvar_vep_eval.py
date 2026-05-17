@@ -311,13 +311,14 @@ def main():
 
     df = load_and_extract(args.hg38_path, args.clinvar_path, args.context_length)
 
-    prefix = _prefix(args)
-    df["sequence"] = df["sequence"].apply(lambda s: prefix + s)
-
     t0 = time.time()
     if args.backend == "evo2":
+        if args.add_dna_tag or args.add_bos:
+            print("WARNING: --add_dna_tag/--add_bos ignored with --backend evo2")
         p_ref, p_alt = compute_probs_evo2(df, args.model, args.batch_size)
     else:
+        prefix = _prefix(args)
+        df["sequence"] = df["sequence"].apply(lambda s: prefix + s)
         probs = compute_probs_hf(df, args.model, args.revision, dtype_str, args.batch_size)
         from transformers_compat import patch_generator_sample, patch_legacy_tokenizer_base
 
