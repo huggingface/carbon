@@ -236,13 +236,13 @@ Dataset: [`HuggingFaceBio/carbon_tasks`](https://huggingface.co/datasets/Hugging
 uv run --group evaluation python evaluation/perturbation_tasks.py \
     --task tata_perturbation \
     --model HuggingFaceBio/Carbon-3B \
-    --add_dna_tag --bf16
+    --bf16
 
 # Carbon 3B hybrid · synonymous codons
 uv run --group evaluation python evaluation/perturbation_tasks.py \
     --task synonymous_codon_substitution \
     --model HuggingFaceBio/Carbon-3B \
-    --add_dna_tag --bf16
+    --bf16
 
 # Evo2 7B
 uv run --group evaluation python evaluation/perturbation_tasks.py \
