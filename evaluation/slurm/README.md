@@ -9,8 +9,8 @@ to that directory. Each script sources `~/.bashrc` before enabling strict mode,
 so put local shell setup such as `uv` there instead of adding hard-coded PATH or
 library exports to the scripts.
 
-One folder per model family, each with the same core scripts. Carbon and Evo2
-folders also include a token-level perturbation launcher.
+One folder per model family, each with the same core scripts. Each folder also
+includes a token-level perturbation launcher.
 
 ```
 carbon-3B/          → HuggingFaceBio/Carbon-3B   (also lc32k variants)
