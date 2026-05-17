@@ -13,7 +13,9 @@ One folder per model family, each with the same core scripts. Each folder also
 includes a token-level perturbation launcher.
 
 ```
+carbon-500M/        → HuggingFaceBio/Carbon-500M
 carbon-3B/          → HuggingFaceBio/Carbon-3B   (also lc32k variants)
+carbon-8B/          → HuggingFaceBio/Carbon-8B
 generator-v2-3b/    → GenerTeam/GENERator-v2-eukaryote-3b-base
 evo2-1b/            → evo2_1b_base
 evo2-7b/            → evo2_7b
