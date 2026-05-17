@@ -41,6 +41,7 @@ Example:
 import argparse
 import hashlib
 import json
+import multiprocessing as mp
 import os
 import time
 
@@ -53,12 +54,10 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 # pos_col (real, unperturbed) and neg_col (perturbed) for each task,
 # plus the matching subset name in HuggingFaceBio/carbon-perturbation-bench.
 TASKS = {
-    "tata_perturbation":             {"pos": "original_sequence", "neg": "sequence", "subset": "tata"},
-    "synonymous_codon_substitution": {"pos": "original_sequence", "neg": "sequence", "subset": "synonymous_codons"},
-    "motif_human":                   {"pos": "original_sequence", "neg": "sequence", "subset": "motif_human"},
-    "promoter_revcomp":              {"pos": "original_sequence", "neg": "sequence", "subset": "promoter_revcomp"},
-    "syn_human":                     {"pos": "original_sequence", "neg": "sequence", "subset": "syn_human"},
-    "syn_mouse":                     {"pos": "original_sequence", "neg": "sequence", "subset": "syn_mouse"},        
+    "motif_human":             {"pos": "original_sequence", "neg": "sequence", "subset": "motif_human"},
+    "syn_human":               {"pos": "original_sequence", "neg": "sequence", "subset": "syn_human"},
+    "syn_mouse":               {"pos": "original_sequence", "neg": "sequence", "subset": "syn_mouse"},
+    "promoter_revcomp":        {"pos": "original_sequence", "neg": "sequence", "subset": "promoter_revcomp"},
 }
 
 
@@ -71,10 +70,10 @@ def parse_args():
     p.add_argument("--dataset", default="HuggingFaceBio/carbon-perturbation-bench")
     p.add_argument("--subset", default=None,
                    help="HF dataset config. Defaults to the per-task subset "
-                        "(`tata` / `synonymous_codons` / `motif_human` / `promoter_revcomp` / `syn_human` / `syn_mouse`).")
-    p.add_argument("--split", default="train")
+                        "(`tata` / `synonymous_codons`).")
+    p.add_argument("--split", default="test")
     p.add_argument("--output_dir", default="./results/perturbation_tasks")
-    p.add_argument("--max_length", type=int, default=2048)
+    p.add_argument("--max_length", type=int, default=8192)
     p.add_argument("--batch_size", type=int, default=16)
     p.add_argument("--bf16", action="store_true")
     return p.parse_args()
@@ -90,32 +89,71 @@ def load_df(args) -> pd.DataFrame:
     return load_dataset(args.dataset, args.subset, split=args.split).to_pandas()
 
 
-@torch.no_grad()
-def score_hf(model, tok, seqs, max_length: int, batch_size: int):
-    """Mean log-prob per token (or per base if model has score_sequence)."""
+def _shard_worker(args):
+    """Score one GPU shard using bp-level score_sequence. Returns [(uid, log_likelihood), ...]."""
+    shard_id, items, model, revision, dtype, batch_size, max_length = args
+    torch.cuda.set_device(shard_id)
+    device = f"cuda:{shard_id}"
+
+    from transformers_compat import patch_generator_sample, patch_legacy_tokenizer_base
+
+    patch_legacy_tokenizer_base()
+    tok = AutoTokenizer.from_pretrained(model, revision=revision, trust_remote_code=True)
+    if tok.pad_token is None:
+        tok.pad_token = tok.eos_token
+    m = AutoModelForCausalLM.from_pretrained(
+        model, revision=revision, trust_remote_code=True, dtype=getattr(torch, dtype)
+    ).to(device).eval()
+    patch_generator_sample(m)
+
     out = []
+    with tqdm(total=len(items), desc=f"gpu{shard_id}", unit="seq") as pbar:
+        for i in range(0, len(items), batch_size):
+            batch = items[i : i + batch_size]
+            seqs = [b["seq"] for b in batch]
+            # Truncate sequences if needed
+            seqs = [s[:max_length] if len(s) > max_length else s for s in seqs]
 
-    for i in tqdm(range(0, len(seqs), batch_size), desc="scoring (bp-level)"):
-        batch = seqs[i : i + batch_size]
-        # Truncate sequences if needed
-        batch = [s[:max_length] if len(s) > max_length else s for s in batch]
+            # Use score_sequence for bp-level scoring
+            with torch.no_grad():
+                if len(seqs) == 1:
+                    _, actual_probs = m.score_sequence(seqs[0])
+                    actual_probs_list = [actual_probs]
+                else:
+                    _, actual_probs_list = m.score_sequence(seqs)
 
-        if len(batch) == 1 and hasattr(model, "score_sequence"):
-            _, actual_probs = model.score_sequence(batch[0])
-            actual_probs_list = [actual_probs]
-        elif hasattr(model, "score_sequence"):
-            _, actual_probs_list = model.score_sequence(batch)
-        else:
-            from transformers_compat import score_dna_sequence_fallback
+            # Compute mean log-prob per base
+            for j, b in enumerate(batch):
+                mean_logp = torch.log(actual_probs_list[j]).mean().item()
+                out.append((b["uid"], float(mean_logp)))
 
-            _, actual_probs_list = score_dna_sequence_fallback(model, tok, batch)
-
-        # Compute mean log-prob per base
-        for actual_probs in actual_probs_list:
-            mean_logp = torch.log(actual_probs).mean().item()
-            out.append(mean_logp)
-
+            pbar.update(len(batch))
     return out
+
+
+@torch.no_grad()
+def score_hf(seqs, model, revision, dtype_str, batch_size: int, max_length: int):
+    """Multi-GPU bp-level scoring across all sequences."""
+    items = [{"uid": str(i), "seq": s} for i, s in enumerate(seqs)]
+
+    n_gpus = torch.cuda.device_count()
+    if n_gpus == 0:
+        raise RuntimeError("No GPU available")
+    print(f"  sharding {len(items)} sequences across {n_gpus} GPUs")
+
+    shard_size = (len(items) + n_gpus - 1) // n_gpus
+    work = [
+        (g, items[g * shard_size : (g + 1) * shard_size], model, revision, dtype_str, batch_size, max_length)
+        for g in range(n_gpus)
+        if g * shard_size < len(items)
+    ]
+
+    ctx = mp.get_context("spawn")
+    with ctx.Pool(processes=n_gpus) as pool:
+        results = list(pool.imap(_shard_worker, work))
+
+    uid_to_logp = {uid: lp for shard in results for uid, lp in shard}
+    return [uid_to_logp[str(i)] for i in range(len(seqs))]
 
 
 def score_evo2(seqs, batch_size: int, model_name: str):
@@ -148,31 +186,26 @@ def main():
     neg = df[neg_col].astype(str).tolist()
     print(f"Loaded {len(df)} pairs ({pos_col} vs {neg_col})")
 
+    # Combine pos and neg sequences to score in one pass
+    all_seqs = pos + neg
+    n_pairs = len(pos)
+
     t0 = time.time()
     if args.backend == "evo2":
         model_name = args.model.split("/")[-1]
-        pos_scores = score_evo2(pos, args.batch_size, model_name)
-        neg_scores = score_evo2(neg, args.batch_size, model_name)
+        all_scores = score_evo2(all_seqs, args.batch_size, model_name)
     else:
-        from transformers_compat import patch_generator_sample, patch_legacy_tokenizer_base
+        dtype_str = "bfloat16" if args.bf16 else "float32"
+        all_scores = score_hf(all_seqs, args.model, args.revision, dtype_str, args.batch_size, args.max_length)
 
-        patch_legacy_tokenizer_base()
-        tok = AutoTokenizer.from_pretrained(args.model, revision=args.revision, trust_remote_code=True)
-        if tok.pad_token is None:
-            tok.pad_token = tok.eos_token
-        model = AutoModelForCausalLM.from_pretrained(
-            args.model, revision=args.revision, trust_remote_code=True,
-            torch_dtype=torch.bfloat16 if args.bf16 else torch.float32,
-            device_map="auto",
-        )
-        patch_generator_sample(model)
-        pos_scores = score_hf(model, tok, pos, args.max_length, args.batch_size)
-        neg_scores = score_hf(model, tok, neg, args.max_length, args.batch_size)
+    # Split back into pos and neg
+    pos_scores = all_scores[:n_pairs]
+    neg_scores = all_scores[n_pairs:]
     print(f"Scoring took {time.time() - t0:.1f}s")
 
     # Non-strict comparator (ties count as correct) — matches the production
     # cds_half_shuffle_eval.py recipe used to generate Carbon's reported numbers.
-    correct = [int(p >= n) for p, n in zip(pos_scores, neg_scores)]
+    correct = [int(p > n) for p, n in zip(pos_scores, neg_scores)]
     acc = sum(correct) / max(len(correct), 1)
     print(f"\nDiscrimination accuracy: {acc:.4f}  (n={len(correct)})")
 
