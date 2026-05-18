@@ -17,7 +17,7 @@ SHARD=${SHARD:-0}
 NSHARDS=${NSHARDS:-1}
 
 OUT="$OUT_ROOT/sequence_recovery"
-MODEL=HuggingFaceBio/Carbon-500M
+MODEL=${MODEL:-HuggingFaceBio/Carbon-500M}
 
 mkdir -p "$OUT"
 
