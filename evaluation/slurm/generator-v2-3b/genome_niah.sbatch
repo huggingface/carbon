@@ -16,9 +16,11 @@
 #   CTX=...     4096 | 8192 | 16384
 source ~/.bashrc
 set -euo pipefail
-UV_RUN=(uv run --group evaluation)
+UV_RUN=(uv run --no-sync --group evaluation)
+RUN_SHA=${RUN_SHA:-$(git rev-parse --short=12 HEAD)}
+OUT_ROOT=${OUT_ROOT:-results/$RUN_SHA}
 
-OUT=results/genome_niah
+OUT="$OUT_ROOT/genome_niah"
 MODEL=${MODEL:-GenerTeam/GENERator-v2-eukaryote-3b-base}
 TASK=${TASK:-niah}
 CTX=${CTX:-16384}
@@ -28,5 +30,5 @@ mkdir -p "$OUT"
 "${UV_RUN[@]}" python "evaluation/genome_niah_eval.py" \
     --model "$MODEL" \
     --task "$TASK" --ctx "$CTX" \
-    --bf16 \
+    --add_bos --bf16 \
     --output_dir "$OUT"

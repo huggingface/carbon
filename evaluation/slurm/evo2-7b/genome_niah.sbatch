@@ -15,7 +15,7 @@
 # Use sharding to split a (task, ctx) cell across multiple jobs.
 #
 # Env overrides:
-#   MODEL=...     default evo2_7b
+#   MODEL=...     default arcinstitute/evo2_7b
 #   TASK=...      niah | neardup_d4 | neardup_d2 | neardup_d1
 #   CTX=...       4096 | 8192 | 16384 | 32768 | 65536 | 131072
 #   SHARD=...     0..N-1   (default 0)
@@ -29,15 +29,17 @@
 #   done
 source ~/.bashrc
 set -euo pipefail
-UV_RUN=(uv run --group evaluation)
+UV_RUN=(uv run --no-sync --group evaluation --group evo2)
+RUN_SHA=${RUN_SHA:-$(git rev-parse --short=12 HEAD)}
+OUT_ROOT=${OUT_ROOT:-results/$RUN_SHA}
 
 
-OUT=results/genome_niah
+OUT="$OUT_ROOT/genome_niah"
 
-MODEL=${MODEL:-evo2_7b}
+MODEL=${MODEL:-arcinstitute/evo2_7b}
 TASK=${TASK:-niah}
 CTX=${CTX:-32768}
-SHARD=${SHARD:-0}
+SHARD=${SHARD:-${SLURM_ARRAY_TASK_ID:-0}}
 NSHARDS=${NSHARDS:-1}
 PREFILL=${PREFILL:-4096}
 

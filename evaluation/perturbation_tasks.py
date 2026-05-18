@@ -1,43 +1,52 @@
 """
-Sequence-level perturbation tasks: TATA perturbation and synonymous codon substitution.
+Sequence-level perturbation tasks: motif disruption, synonymous codon substitution, and promoter reverse-complement.
 
-Both apply a structural perturbation to a real biological sequence (motif
-disruption or codon swap) and ask whether the model assigns higher
-log-likelihood to the unperturbed version. Distinct from VEP, which scores
-single-nucleotide variants and reports AUROC of the LL delta.
+Each task applies a structural perturbation to a real biological sequence and asks
+whether the model assigns higher log-likelihood to the unperturbed version. Distinct
+from VEP, which scores single-nucleotide variants and reports AUROC of the LL delta.
 
-  tata_perturbation:
-    Disrupt TATA-box motifs in promoters with random substitutions. The model
-    should score the intact promoter higher than the perturbed one.
-    Dataset: HuggingFaceBio/carbon-perturbation-bench  cols: original_sequence (real), sequence (perturbed)
+Available tasks:
+  motif_human:
+    Insert a tiled CAG repeat (10 consecutive CAG codons) into the CDS, creating
+    a synthetic polyglutamine expansion. The model should score the original
+    sequence higher than the perturbed one with the CAG insertion.
 
-  synonymous_codon_substitution:
+  syn_human / syn_mouse:
     Replace codons in a CDS with synonyms encoding the same amino acid. The
     real codon usage should be preferred over the synonymous variant.
-    Dataset: HuggingFaceBio/carbon-perturbation-bench  cols: original_sequence (real), sequence (synonymous)
 
-Metric: pairwise discrimination accuracy = mean(LL(real) > LL(perturbed)).
+  promoter_revcomp:
+    Replace promoter sequences with their reverse-complement as a perturbation.
+    The model should score the original strand higher than the reverse-complement.
 
-Backends and tag flags work the same way as the other Carbon evals:
+Dataset: HuggingFaceBio/carbon-perturbation-bench
+Columns: original_sequence (real), sequence (perturbed)
+Metric: pairwise discrimination accuracy = mean(LL(real) > LL(perturbed))
+
+Backends:
   --backend hf       Carbon, GENERator, any HF causal LM
   --backend evo2     official Evo2 inference library
-  --add_dna_tag      prepend <dna> (Carbon hybrid models)
-  (default)          no prefix — GENERator and Evo2
 
 Example:
   python perturbation_tasks.py \
-      --task tata_perturbation \
+      --task motif_human \
       --model HuggingFaceBio/Carbon-3B \
-      --add_dna_tag --bf16
+      --bf16
 
   python perturbation_tasks.py \
-      --task synonymous_codon_substitution \
+      --task syn_human \
+      --model GenerTeam/GENERator-v2-eukaryote-3b-base \
+      --bf16
+
+  python perturbation_tasks.py \
+      --task promoter_revcomp \
       --model evo2_7b --backend evo2 --bf16
 """
 
 import argparse
 import hashlib
 import json
+import multiprocessing as mp
 import os
 import time
 
@@ -50,8 +59,10 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 # pos_col (real, unperturbed) and neg_col (perturbed) for each task,
 # plus the matching subset name in HuggingFaceBio/carbon-perturbation-bench.
 TASKS = {
-    "tata_perturbation":             {"pos": "original_sequence", "neg": "sequence", "subset": "tata"},
-    "synonymous_codon_substitution": {"pos": "original_sequence", "neg": "sequence", "subset": "synonymous_codons"},
+    "motif_human":             {"pos": "original_sequence", "neg": "sequence", "subset": "motif_human"},
+    "syn_human":               {"pos": "original_sequence", "neg": "sequence", "subset": "syn_human"},
+    "syn_mouse":               {"pos": "original_sequence", "neg": "sequence", "subset": "syn_mouse"},
+    "promoter_revcomp":        {"pos": "original_sequence", "neg": "sequence", "subset": "promoter_revcomp"},
 }
 
 
@@ -63,14 +74,11 @@ def parse_args():
     p.add_argument("--backend", choices=["hf", "evo2"], default="hf")
     p.add_argument("--dataset", default="HuggingFaceBio/carbon-perturbation-bench")
     p.add_argument("--subset", default=None,
-                   help="HF dataset config. Defaults to the per-task subset "
-                        "(`tata` / `synonymous_codons`).")
-    p.add_argument("--split", default="train")
+                   help="HF dataset config. Defaults to the per-task subset.")
+    p.add_argument("--split", default="test")
     p.add_argument("--output_dir", default="./results/perturbation_tasks")
-    p.add_argument("--max_length", type=int, default=2048)
     p.add_argument("--batch_size", type=int, default=16)
     p.add_argument("--bf16", action="store_true")
-    p.add_argument("--add_dna_tag", action="store_true", help="Wrap with <dna>...</dna> (Carbon hybrid)")
     return p.parse_args()
 
 
@@ -84,27 +92,111 @@ def load_df(args) -> pd.DataFrame:
     return load_dataset(args.dataset, args.subset, split=args.split).to_pandas()
 
 
-def wrap(seqs, add_dna_tag: bool):
-    return [f"<dna>{s}</dna>" if add_dna_tag else s for s in seqs]
+def _shard_worker(args):
+    """Score one GPU shard. Uses bp-level score_sequence if available, otherwise token-level scoring."""
+    shard_id, items, model, revision, dtype, batch_size = args
+    torch.cuda.set_device(shard_id)
+    device = f"cuda:{shard_id}"
+
+
+    tok = AutoTokenizer.from_pretrained(model, revision=revision, trust_remote_code=True)
+    if tok.pad_token is None:
+        tok.pad_token = tok.eos_token
+    m = AutoModelForCausalLM.from_pretrained(
+        model, revision=revision, trust_remote_code=True, dtype=getattr(torch, dtype)
+    ).to(device).eval()
+
+    # Check if model has score_sequence method for bp-level scoring
+    use_bp_level = hasattr(m, "score_sequence")
+    scoring_method = "bp-level" if use_bp_level else "token-level"
+
+    # Detect k-mer size and BOS token based on model name (for token-level scoring)
+    if not use_bp_level:
+        model_lower = model.lower()
+        if "carbon" in model_lower:
+            kmer_size = 6
+            bos_token = "<dna>"
+        elif "generator" in model_lower:
+            kmer_size = 6
+            bos_token = "<s>"
+        else:
+            raise ValueError(f"Unsupported model name: {model}")
+
+    out = []
+    with tqdm(total=len(items), desc=f"gpu{shard_id} ({scoring_method})", unit="seq") as pbar:
+        for i in range(0, len(items), batch_size):
+            batch = items[i : i + batch_size]
+
+            # Extract and preprocess sequences based on scoring method
+            if use_bp_level:
+                seqs = [b["seq"] for b in batch]
+            else:
+                seqs = [
+                    bos_token + b["seq"][:((len(b["seq"]) // kmer_size) * kmer_size)]
+                    for b in batch
+                ]
+
+            with torch.no_grad():
+                if use_bp_level:
+                    # BP-level scoring using score_sequence
+                    if len(seqs) == 1:
+                        _, actual_probs = m.score_sequence(seqs[0])
+                        actual_probs_list = [actual_probs]
+                    else:
+                        _, actual_probs_list = m.score_sequence(seqs)
+
+                    # Compute mean log-prob per base
+                    for j, b in enumerate(batch):
+                        mean_logp = torch.log(actual_probs_list[j]).mean().item()
+                        out.append((b["uid"], float(mean_logp)))
+                else:
+                    # Token-level scoring
+                    enc = tok(seqs, return_tensors="pt", padding=True, truncation=False,
+                             add_special_tokens=False)
+                    ids = enc["input_ids"].to(device)
+                    attn = enc["attention_mask"].to(device)
+
+                    logits = m(input_ids=ids, attention_mask=attn).logits[:, :-1, :]
+                    targets = ids[:, 1:]
+                    mask = attn[:, 1:].float()
+
+                    # Compute log probabilities
+                    logp = torch.log_softmax(logits, dim=-1)
+                    token_logp = logp.gather(2, targets.unsqueeze(-1)).squeeze(-1)
+
+                    # Mean log-prob per token (masked)
+                    seq_logp = (token_logp * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1)
+
+                    for j, b in enumerate(batch):
+                        out.append((b["uid"], float(seq_logp[j].item())))
+
+            pbar.update(len(batch))
+    return out
 
 
 @torch.no_grad()
-def score_hf(model, tok, seqs, max_length: int, batch_size: int):
-    """Mean log-prob per token."""
-    out = []
-    for i in tqdm(range(0, len(seqs), batch_size), desc="scoring"):
-        batch = seqs[i : i + batch_size]
-        enc = tok(batch, return_tensors="pt", padding=True, truncation=True,
-                  max_length=max_length, add_special_tokens=False)
-        ids = enc["input_ids"].to(model.device)
-        attn = enc["attention_mask"].to(model.device)
-        logits = model(ids).logits[:, :-1, :]
-        targets = ids[:, 1:]
-        mask = attn[:, 1:]
-        logp = torch.log_softmax(logits, dim=-1).gather(-1, targets.unsqueeze(-1)).squeeze(-1)
-        denom = mask.sum(dim=1).clamp(min=1)
-        out.extend(((logp * mask).sum(dim=1) / denom).tolist())
-    return out
+def score_hf(seqs, model, revision, dtype_str, batch_size: int):
+    """Multi-GPU bp-level scoring across all sequences."""
+    items = [{"uid": str(i), "seq": s} for i, s in enumerate(seqs)]
+
+    n_gpus = torch.cuda.device_count()
+    if n_gpus == 0:
+        raise RuntimeError("No GPU available")
+    print(f"  sharding {len(items)} sequences across {n_gpus} GPUs")
+
+    shard_size = (len(items) + n_gpus - 1) // n_gpus
+    work = [
+        (g, items[g * shard_size : (g + 1) * shard_size], model, revision, dtype_str, batch_size)
+        for g in range(n_gpus)
+        if g * shard_size < len(items)
+    ]
+
+    ctx = mp.get_context("spawn")
+    with ctx.Pool(processes=n_gpus) as pool:
+        results = list(pool.imap(_shard_worker, work))
+
+    uid_to_logp = {uid: lp for shard in results for uid, lp in shard}
+    return [uid_to_logp[str(i)] for i in range(len(seqs))]
 
 
 def score_evo2(seqs, batch_size: int, model_name: str):
@@ -133,35 +225,30 @@ def main():
         args.subset = task_cfg["subset"]
     df = load_df(args)
     pos_col, neg_col = task_cfg["pos"], task_cfg["neg"]
-    pos = wrap(df[pos_col].astype(str).tolist(), args.add_dna_tag)
-    neg = wrap(df[neg_col].astype(str).tolist(), args.add_dna_tag)
+    pos = df[pos_col].astype(str).tolist()
+    neg = df[neg_col].astype(str).tolist()
     print(f"Loaded {len(df)} pairs ({pos_col} vs {neg_col})")
+
+    # Combine pos and neg sequences to score in one pass
+    all_seqs = pos + neg
+    n_pairs = len(pos)
 
     t0 = time.time()
     if args.backend == "evo2":
         model_name = args.model.split("/")[-1]
-        pos_scores = score_evo2(pos, args.batch_size, model_name)
-        neg_scores = score_evo2(neg, args.batch_size, model_name)
+        all_scores = score_evo2(all_seqs, args.batch_size, model_name)
     else:
-        from transformers_compat import patch_generator_sample, patch_legacy_tokenizer_base
+        dtype_str = "bfloat16" if args.bf16 else "float32"
+        all_scores = score_hf(all_seqs, args.model, args.revision, dtype_str, args.batch_size)
 
-        patch_legacy_tokenizer_base()
-        tok = AutoTokenizer.from_pretrained(args.model, revision=args.revision, trust_remote_code=True)
-        if tok.pad_token is None:
-            tok.pad_token = tok.eos_token
-        model = AutoModelForCausalLM.from_pretrained(
-            args.model, revision=args.revision, trust_remote_code=True,
-            torch_dtype=torch.bfloat16 if args.bf16 else torch.float32,
-            device_map="auto",
-        )
-        patch_generator_sample(model)
-        pos_scores = score_hf(model, tok, pos, args.max_length, args.batch_size)
-        neg_scores = score_hf(model, tok, neg, args.max_length, args.batch_size)
+    # Split back into pos and neg
+    pos_scores = all_scores[:n_pairs]
+    neg_scores = all_scores[n_pairs:]
     print(f"Scoring took {time.time() - t0:.1f}s")
 
     # Non-strict comparator (ties count as correct) — matches the production
     # cds_half_shuffle_eval.py recipe used to generate Carbon's reported numbers.
-    correct = [int(p >= n) for p, n in zip(pos_scores, neg_scores)]
+    correct = [int(p > n) for p, n in zip(pos_scores, neg_scores)]
     acc = sum(correct) / max(len(correct), 1)
     print(f"\nDiscrimination accuracy: {acc:.4f}  (n={len(correct)})")
 

@@ -22,7 +22,9 @@ Backends (`--backend`):
 
 Tag flag (HF backend only):
   --add_dna_tag    prepend `<dna>` (Carbon hybrid models)
-
+  --add_bos        prepend `<s>` (GENERator pure-DNA)
+  (default)        no prefix — Evo2
+    
 Sharding (`--shard_idx --n_shards`) splits a (task, ctx) cell across multiple
 SLURM jobs. Especially useful for Evo2 at ctx ≥ 64k where a row takes
 ~4–14 hours.
@@ -34,15 +36,10 @@ Metrics reported:
   ll_margin         LL(positive) − LL(negative)
 
 Examples:
-  # Carbon-lc32k native, 32 k native context
+  # Carbon-3B, 32k native context
   python genome_niah_eval.py \\
-      --model HuggingFaceBio/carbon-3B-longctx-32k-rope5M \\
+      --model HuggingFaceBio/Carbon-3B \\
       --task niah --ctx 32768 --add_dna_tag --bf16
-
-  # Carbon-lc32k + YaRN-4× extrapolated to 64k
-  python genome_niah_eval.py \\
-      --model HuggingFaceBio/carbon-3B-longctx-32k-rope5M-yarn4x \\
-      --task niah --ctx 65536 --add_dna_tag --bf16
 
   # GENERator-v2 3B at 16k
   python genome_niah_eval.py \\
@@ -91,8 +88,11 @@ def parse_args() -> argparse.Namespace:
                    help="context length in Carbon-tokens (6 bp/token)")
     # HF backend
     p.add_argument("--bf16", action="store_true", help="HF: load model in bf16")
+    p.add_argument("--with_yarn", action="store_true",
+                   help="HF: load with YaRN rope scaling for 64k-token context")
     p.add_argument("--add_dna_tag", action="store_true",
                    help="HF: prepend `<dna>` (Carbon hybrid models)")
+    p.add_argument("--add_bos", action="store_true", help="HF: prepend <s> (GENERator pure-DNA)")
     p.add_argument("--restrict_to_dna_tokens", action="store_true", default=True,
                    help="HF: mask non-DNA tokens during generation (Carbon hybrid). "
                    "Reads DNA token range from the model's dna_config.json. "
@@ -172,26 +172,51 @@ def apply_sharding(df: pd.DataFrame, args: argparse.Namespace) -> pd.DataFrame:
 # HF backend (Carbon, GENERator, any HF causal LM)
 # ============================================================
 
-def _prefix(seq: str, add_dna_tag: bool) -> str:
-    return ("<dna>" + seq) if add_dna_tag else seq
+def _prefix(args) -> str:
+    if args.add_dna_tag:
+        return "<dna>"
+    if args.add_bos:
+        return "<s>"
+    return ""
 
 
 def _load_hf(args):
-    from transformers import AutoModelForCausalLM, AutoTokenizer
-    from transformers_compat import patch_generator_sample, patch_legacy_tokenizer_base
+    from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
-    patch_legacy_tokenizer_base()
     tokenizer = AutoTokenizer.from_pretrained(args.model, revision=args.revision, trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+    model_kwargs = {
+        "revision": args.revision,
+        "torch_dtype": torch.bfloat16 if args.bf16 else torch.float32,
+        "attn_implementation": args.attn_implementation,
+        "device_map": "auto",
+    }
+    if args.with_yarn:
+        config = AutoConfig.from_pretrained(args.model, revision=args.revision, trust_remote_code=True)
+        config.max_position_embeddings = 65536
+        rope_parameters = dict(
+            getattr(config, "rope_parameters", None)
+            or getattr(config, "rope_scaling", None)
+            or {}
+        )
+        rope_theta = rope_parameters.get("rope_theta", getattr(config, "rope_theta", None))
+        yarn_rope_parameters = {
+            "rope_type": "yarn",
+            "type": "yarn",
+            "factor": 4.0,
+            "original_max_position_embeddings": 32768,
+        }
+        if rope_theta is not None:
+            yarn_rope_parameters["rope_theta"] = rope_theta
+        config.rope_parameters = dict(yarn_rope_parameters)
+        config.rope_scaling = dict(yarn_rope_parameters)
+        model_kwargs["config"] = config
     model = AutoModelForCausalLM.from_pretrained(
-        args.model, revision=args.revision,
-        torch_dtype=torch.bfloat16 if args.bf16 else torch.float32,
-        attn_implementation=args.attn_implementation,
-        device_map="auto",
+        args.model,
+        **model_kwargs,
     )
     model.eval()
-    patch_generator_sample(model)
     return model, tokenizer
 
 
@@ -254,9 +279,10 @@ def hf_generate(model, tokenizer, df, args) -> List[dict]:
     max_new = n_gen_tokens_set[0]
 
     out = []
+    prefix = _prefix(args)
     for start in tqdm(range(0, len(df), args.batch_size), desc="hf-gen"):
         end = min(start + args.batch_size, len(df))
-        prompts = [_prefix(s, args.add_dna_tag) for s in df["prompt"].iloc[start:end]]
+        prompts = [prefix + s for s in df["prompt"].iloc[start:end]]
         enc = tokenizer(prompts, add_special_tokens=False, return_tensors="pt",
                         padding=True, truncation=False).to(device)
         with torch.inference_mode():
@@ -285,9 +311,10 @@ def hf_likelihood(model, tokenizer, df, args) -> List[dict]:
         raise RuntimeError("Model body not found at .model or .transformer")
 
     def ll(prompts, full_seqs):
-        full_enc = tokenizer([_prefix(s, args.add_dna_tag) for s in full_seqs],
+        prefix = _prefix(args)
+        full_enc = tokenizer([prefix + s for s in full_seqs],
                              add_special_tokens=False, return_tensors="pt", padding=True).to(device)
-        prompt_enc = tokenizer([_prefix(s, args.add_dna_tag) for s in prompts],
+        prompt_enc = tokenizer([prefix + s for s in prompts],
                                add_special_tokens=False, return_tensors="pt", padding=True).to(device)
         full_ids = full_enc["input_ids"]
         full_len = int(full_enc["attention_mask"].sum(1)[0].item())
@@ -359,9 +386,10 @@ def evo2_eval(args, df) -> pd.DataFrame:
 
     preload_cudnn_libraries()
     from evo2 import Evo2
-    print(f"Loading Evo2 model: {args.model}")
+    model_name = args.model.split("/")[-1]
+    print(f"Loading Evo2 model: {model_name}")
     t0 = time.time()
-    model = Evo2(args.model)
+    model = Evo2(model_name)
     print(f"loaded in {time.time()-t0:.1f}s")
     tokenizer = model.tokenizer
     device = "cuda:0"
@@ -441,6 +469,7 @@ def main():
         "model": args.model, "revision": args.revision, "backend": args.backend,
         "task": args.task, "ctx": args.ctx, "n_samples": int(len(res)),
         "shard_idx": args.shard_idx, "n_shards": args.n_shards,
+        "with_yarn": bool(args.with_yarn),
         "gen_exact_match": float(res["gen_exact_match"].mean()),
         "gen_base_accuracy": float(res["gen_base_accuracy"].mean()),
         "elapsed_sec": elapsed,

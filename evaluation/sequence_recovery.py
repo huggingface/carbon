@@ -10,8 +10,8 @@ Three model families are supported via a single flag:
 
 Tag flags (mutually exclusive):
   --add_dna_tag      prepend `<dna>` to each sequence (Carbon hybrid models)
-  --add_bos          prepend `<s>` (Carbon pure-DNA / 6-mer models)
-  (default)          no prefix — GENERator and Evo2
+  --add_bos          prepend `<s>` (GENERator pure-DNA)
+  (default)          no prefix — Evo2
 
 Eukaryote / bacteria / others come from the GenerTeam/sequence-recovery dataset.
 
@@ -23,8 +23,8 @@ Example:
 
   # GENERator
   python sequence_recovery.py \
-      --model GenerTeam/GENERator-v2-eukaryote-1.2b-base \
-      --data_type eukaryote --bf16
+      --model GenerTeam/GENERator-v2-eukaryote-3b-base \
+      --data_type eukaryote --add_bos --bf16
 
   # Evo2 7B (1 GPU)
   python sequence_recovery.py \
@@ -59,8 +59,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--batch_size", type=int, default=64)
     p.add_argument("--bf16", action="store_true")
     p.add_argument("--add_dna_tag", action="store_true", help="Prepend <dna> (Carbon hybrid)")
-    p.add_argument("--add_bos", action="store_true", help="Prepend <s> (Carbon pure-DNA)")
+    p.add_argument("--add_bos", action="store_true", help="Prepend <s> (GENERator pure-DNA)")
     p.add_argument("--max_samples", type=int, default=None, help="For quick testing")
+    p.add_argument("--shard_idx", type=int, default=0, help="0-based row shard index")
+    p.add_argument("--n_shards", type=int, default=1, help="Total number of row shards")
     return p.parse_args()
 
 
@@ -102,9 +104,7 @@ def hf_shard(shard_id, records, args, dtype_str):
     device = f"cuda:{shard_id}"
     dtype = torch.bfloat16 if dtype_str == "bfloat16" else torch.float32
 
-    from transformers_compat import patch_generator_sample, patch_legacy_tokenizer_base
 
-    patch_legacy_tokenizer_base()
     tok = AutoTokenizer.from_pretrained(args.model, revision=args.revision, trust_remote_code=True)
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
@@ -112,7 +112,6 @@ def hf_shard(shard_id, records, args, dtype_str):
     model = AutoModelForCausalLM.from_pretrained(
         args.model, revision=args.revision, trust_remote_code=True, dtype=dtype
     ).to(device).eval()
-    patch_generator_sample(model)
 
     special_ids = getattr(tok, "all_special_ids", []) or []
     logits_processor = LogitsProcessorList([SuppressSpecialTokens(special_ids)])
@@ -197,6 +196,10 @@ def run_evo2(df: pd.DataFrame, args):
 def main():
     args = parse_args()
     assert not (args.add_dna_tag and args.add_bos), "--add_dna_tag and --add_bos are mutually exclusive"
+    if args.n_shards < 1:
+        raise ValueError("--n_shards must be >= 1")
+    if not 0 <= args.shard_idx < args.n_shards:
+        raise ValueError("--shard_idx must satisfy 0 <= shard_idx < n_shards")
     dtype_str = "bfloat16" if args.bf16 else "float32"
 
     print("=" * 70)
@@ -210,6 +213,17 @@ def main():
         lambda row: hashlib.md5(f"{row['sequence']}_{row.name}".encode()).hexdigest()[:16],
         axis=1,
     )
+    if args.n_shards > 1:
+        total_before_shard = len(df)
+        df = df.iloc[args.shard_idx :: args.n_shards].reset_index(drop=True)
+        if len(df) == 0:
+            raise ValueError(
+                f"Shard {args.shard_idx}/{args.n_shards} has no rows from {total_before_shard} sequences"
+            )
+        print(
+            f"Shard {args.shard_idx}/{args.n_shards}: selected {len(df)} "
+            f"of {total_before_shard} sequences"
+        )
     print(f"Loaded {len(df)} sequences ({df['type'].value_counts().to_dict() if 'type' in df else 'n/a'})")
 
     t0 = time.time()
@@ -235,7 +249,8 @@ def main():
 
     os.makedirs(args.output_dir, exist_ok=True)
     model_tag = args.model.split("/")[-1]
-    base = f"{model_tag}_{args.data_type}_{dtype_str}"
+    shard_tag = f"_shard{args.shard_idx}of{args.n_shards}" if args.n_shards > 1 else ""
+    base = f"{model_tag}_{args.data_type}_{dtype_str}{shard_tag}"
     parquet = os.path.join(args.output_dir, f"{base}.parquet")
     summary = os.path.join(args.output_dir, f"{base}.json")
     cols = [c for c in ["hash", "type", "label", "pred", "accuracy"] if c in out.columns]
@@ -251,6 +266,8 @@ def main():
                 "overall_accuracy": float(overall),
                 "type_accuracy": {k: float(v) for k, v in (by_type.items() if by_type is not None else [])},
                 "dtype": dtype_str,
+                "shard_idx": int(args.shard_idx),
+                "n_shards": int(args.n_shards),
             },
             f,
             indent=2,

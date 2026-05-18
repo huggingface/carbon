@@ -24,12 +24,20 @@ Backends & flags follow the rest of the evaluation suite:
   --backend hf       Carbon, GENERator, any HF causal LM
   --backend evo2     official Evo2 inference library
   --add_dna_tag      prepend <dna> (Carbon hybrid models)
+  --add_bos          prepend <s> (GENERator pure-DNA)
+  (default)          no prefix — Evo2
 
 Example:
   # Carbon 3B hybrid (flagship, 8 GPUs, 24 kb context)
   python clinvar_vep_eval.py \
       --model HuggingFaceBio/Carbon-3B \
       --add_dna_tag --bf16 --context_length 24000 \
+      --output_dir ./results/clinvar
+  
+  # GENERator
+  python clinvar_vep_eval.py \
+      --model GenerTeam/GENERator-v2-eukaryote-3b-base \
+      --add_bos --bf16 --context_length 24000 \
       --output_dir ./results/clinvar
 
   # Evo2 7B
@@ -71,10 +79,16 @@ def parse_args():
                    help="CPU procs for the per-variant probability marginalisation.")
     p.add_argument("--output_dir", default="./results/clinvar")
     p.add_argument("--bf16", action="store_true")
-    p.add_argument("--add_dna_tag", action="store_true",
-                   help="Wrap with <dna> (Carbon hybrid models)")
+    p.add_argument("--add_dna_tag", action="store_true", help="Prepend <dna> (Carbon hybrid)")
+    p.add_argument("--add_bos", action="store_true", help="Prepend <s> (GENERator pure-DNA)")
     return p.parse_args()
 
+def _prefix(args) -> str:
+    if args.add_dna_tag:
+        return "<dna>"
+    if args.add_bos:
+        return "<s>"
+    return ""
 
 def load_and_extract(hg38_path: str, clinvar_path: str, context_length: int) -> pd.DataFrame:
     """Load ClinVar + hg38 and build the left-context sequence for each variant."""
@@ -117,16 +131,12 @@ def _hf_shard(args):
     torch.cuda.set_device(shard_id)
     device = f"cuda:{shard_id}"
 
-    from transformers_compat import patch_generator_sample, patch_legacy_tokenizer_base
-
-    patch_legacy_tokenizer_base()
     tok = AutoTokenizer.from_pretrained(model, revision=revision, trust_remote_code=True)
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
     m = AutoModelForCausalLM.from_pretrained(
         model, revision=revision, trust_remote_code=True, dtype=getattr(torch, dtype)
     ).to(device).eval()
-    patch_generator_sample(m)
 
     out = []
     with tqdm(total=len(records), desc=f"gpu{shard_id}", unit="seq") as pbar:
@@ -251,10 +261,48 @@ def _evo2_shard(args):
     return p_ref, p_alt
 
 
+def _compute_probs_evo2_model_parallel(sequences, refs, alts, model_name: str, batch_size: int):
+    """Evo2 scoring path for models that need all visible GPUs."""
+    from evo2_runtime import preload_cudnn_libraries
+
+    preload_cudnn_libraries()
+    from evo2 import Evo2
+    from evo2.scoring import prepare_batch
+
+    torch.cuda.set_device(0)
+    model = Evo2(model_name)
+
+    base_ids = {}
+    for b in "ACGT":
+        ids = model.tokenizer.tokenize(b)
+        base_ids[b] = ids[0] if ids else None
+
+    p_ref, p_alt = [], []
+    for i in tqdm(range(0, len(sequences), batch_size), desc="evo2"):
+        batch_seqs = sequences[i : i + batch_size]
+        batch_refs = refs[i : i + batch_size]
+        batch_alts = alts[i : i + batch_size]
+        input_ids, seq_lengths = prepare_batch(batch_seqs, model.tokenizer, device="cuda:0")
+        with torch.inference_mode():
+            output, _ = model(input_ids)
+            logits = output[0] if isinstance(output, tuple) else output
+        for j in range(len(batch_seqs)):
+            last = logits[j, seq_lengths[j] - 1, :]
+            probs = torch.softmax(last, dim=0)
+            rid, aid = base_ids.get(batch_refs[j]), base_ids.get(batch_alts[j])
+            p_ref.append(float(probs[rid]) if rid is not None else 0.0)
+            p_alt.append(float(probs[aid]) if aid is not None else 0.0)
+    return np.array(p_ref), np.array(p_alt)
+
+
 def compute_probs_evo2(df: pd.DataFrame, model_name: str, batch_size: int):
     sequences = df["sequence"].tolist()
     refs = df["ref"].tolist()
     alts = df["alt"].tolist()
+    model_name = model_name.split("/")[-1]
+    if model_name in {"evo2_40b", "evo2_40b_base"}:
+        return _compute_probs_evo2_model_parallel(sequences, refs, alts, model_name, batch_size)
+
     n_gpus = torch.cuda.device_count()
     if n_gpus == 0:
         raise RuntimeError("No GPU available")
@@ -263,7 +311,7 @@ def compute_probs_evo2(df: pd.DataFrame, model_name: str, batch_size: int):
         (g, sequences[g * shard_size : (g + 1) * shard_size],
          refs[g * shard_size : (g + 1) * shard_size],
          alts[g * shard_size : (g + 1) * shard_size],
-         model_name.split("/")[-1], batch_size)
+         model_name, batch_size)
         for g in range(n_gpus)
         if g * shard_size < len(sequences)
     ]
@@ -296,20 +344,17 @@ def main():
             )
 
     df = load_and_extract(args.hg38_path, args.clinvar_path, args.context_length)
-    if args.add_dna_tag:
-        print("Wrapping sequences with <dna> for hybrid tokenizer")
-        df["sequence"] = df["sequence"].apply(lambda s: f"<dna>{s}")
 
     t0 = time.time()
     if args.backend == "evo2":
-        if args.add_dna_tag:
-            print("WARNING: --add_dna_tag ignored with --backend evo2")
+        if args.add_dna_tag or args.add_bos:
+            print("WARNING: --add_dna_tag/--add_bos ignored with --backend evo2")
         p_ref, p_alt = compute_probs_evo2(df, args.model, args.batch_size)
     else:
+        prefix = _prefix(args)
+        df["sequence"] = df["sequence"].apply(lambda s: prefix + s)
         probs = compute_probs_hf(df, args.model, args.revision, dtype_str, args.batch_size)
-        from transformers_compat import patch_generator_sample, patch_legacy_tokenizer_base
 
-        patch_legacy_tokenizer_base()
         tok = AutoTokenizer.from_pretrained(args.model, revision=args.revision, trust_remote_code=True)
         p_ref, p_alt = marginalise_probs(df, probs, tok, args.num_processes)
     print(f"Scoring took {time.time() - t0:.1f}s")

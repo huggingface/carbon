@@ -12,14 +12,17 @@
 
 source ~/.bashrc
 set -euo pipefail
-UV_RUN=(uv run --group evaluation)
+UV_RUN=(uv run --no-sync --group evaluation --group evo2)
+RUN_SHA=${RUN_SHA:-$(git rev-parse --short=12 HEAD)}
+OUT_ROOT=${OUT_ROOT:-results/$RUN_SHA}
 
 
-OUT=results/traitgym
+OUT="$OUT_ROOT/traitgym"
+MODEL=${MODEL:-arcinstitute/evo2_7b}
 mkdir -p "$OUT"
 
 "${UV_RUN[@]}" python "evaluation/vep_eval.py" \
-    --model evo2_7b --backend evo2 \
+    --model "$MODEL" --backend evo2 \
     --data_path hf://datasets/HuggingFaceBio/traitgym/mendelian_traits_vep.parquet \
     --bf16 --rev_comp_avg \
     --output_dir "$OUT"

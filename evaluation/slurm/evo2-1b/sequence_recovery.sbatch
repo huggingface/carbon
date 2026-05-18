@@ -12,13 +12,19 @@
 
 source ~/.bashrc
 set -euo pipefail
-UV_RUN=(uv run --group evaluation)
+UV_RUN=(uv run --no-sync --group evaluation --group evo2)
+RUN_SHA=${RUN_SHA:-$(git rev-parse --short=12 HEAD)}
+OUT_ROOT=${OUT_ROOT:-results/$RUN_SHA}
+SHARD=${SHARD:-0}
+NSHARDS=${NSHARDS:-1}
 
 
-OUT=results/sequence_recovery
+OUT="$OUT_ROOT/sequence_recovery"
+MODEL=${MODEL:-arcinstitute/evo2_1b_base}
 mkdir -p "$OUT"
 
 "${UV_RUN[@]}" python "evaluation/sequence_recovery.py" \
-    --model evo2_1b_base --backend evo2 \
+    --model "$MODEL" --backend evo2 \
     --data_type eukaryote --gen_len_bp 30 --bf16 \
-    --output_dir "$OUT"
+    --output_dir "$OUT" \
+    --shard_idx "$SHARD" --n_shards "$NSHARDS"
