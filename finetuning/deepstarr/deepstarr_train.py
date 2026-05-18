@@ -173,6 +173,32 @@ def pearson_loss(
     return 1.0 - corr.mean()
 
 
+def initialize_missing_regression_head(
+    model: nn.Module,
+    missing_keys: list[str],
+) -> None:
+    classifier = getattr(model, "score", None)
+    if not isinstance(classifier, nn.Linear):
+        return
+    if "score.weight" not in missing_keys and "score.bias" not in missing_keys:
+        return
+
+    initializer_range = float(getattr(model.config, "initializer_range", 0.02))
+    with torch.no_grad():
+        weight = torch.empty(
+            classifier.weight.shape,
+            dtype=torch.float32,
+            device=classifier.weight.device,
+        )
+        nn.init.normal_(weight, mean=0.0, std=initializer_range)
+        classifier.weight.copy_(weight.to(dtype=classifier.weight.dtype))
+        if classifier.bias is not None:
+            classifier.bias.zero_()
+
+    if not torch.isfinite(classifier.weight.float()).all():
+        raise RuntimeError("Regression head initialization produced non-finite values")
+
+
 def normalize_predictions(predictions: Any) -> np.ndarray:
     if isinstance(predictions, tuple):
         predictions = predictions[0]
@@ -384,13 +410,18 @@ def main() -> None:
     }
     if args.attn_implementation:
         model_kwargs["attn_implementation"] = args.attn_implementation
-    model = AutoModelForSequenceClassification.from_pretrained(
+    model, loading_info = AutoModelForSequenceClassification.from_pretrained(
         args.model,
         num_labels=2,
         problem_type="regression",
         id2label={0: "Dev_scaled", 1: "Hk_scaled"},
         label2id={"Dev_scaled": 0, "Hk_scaled": 1},
+        output_loading_info=True,
         **model_kwargs,
+    )
+    initialize_missing_regression_head(
+        model,
+        list(loading_info.get("missing_keys", [])),
     )
     if tokenizer.pad_token_id is not None:
         model.config.pad_token_id = tokenizer.pad_token_id
