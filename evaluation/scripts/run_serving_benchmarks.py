@@ -46,6 +46,7 @@ SUMMARY_FIELDS = [
     "total_output_tokens",
     "request_throughput",
     "output_throughput",
+    "output_bp_per_second",
     "total_token_throughput",
     "mean_ttft_ms",
     "mean_tpot_ms",
@@ -66,6 +67,7 @@ class RunSpec:
     prompt_file: Path
     run_dir: Path
     gpu_count: int = 1
+    bp_per_output_token: float = 1.0
     port: int | None = None
     served_model_name: str | None = None
     draft_model: str | None = None
@@ -657,6 +659,7 @@ def build_run_specs(
                 model=args.carbon_model,
                 prompt_file=Path(prompt_files["carbon"]),
                 run_dir=run_dir / f"{carbon_name}-vllm",
+                bp_per_output_token=args.bp_per_token,
                 served_model_name=f"{carbon_name}-vllm",
                 server_extra_args=carbon_extra_args,
                 metadata=carbon_metadata,
@@ -672,6 +675,7 @@ def build_run_specs(
                         model=args.carbon_model,
                         prompt_file=Path(prompt_files["carbon"]),
                         run_dir=run_dir / f"{carbon_name}-spec-{token_count}",
+                        bp_per_output_token=args.bp_per_token,
                         served_model_name=f"{carbon_name}-spec-{token_count}",
                         draft_model=args.carbon_draft_model,
                         num_speculative_tokens=token_count,
@@ -710,6 +714,7 @@ def build_run_specs(
                 model=args.generator_model,
                 prompt_file=Path(prompt_files["generator"]),
                 run_dir=run_dir / f"{generator_name}-vllm",
+                bp_per_output_token=args.bp_per_token,
                 served_model_name=f"{generator_name}-vllm",
                 requires_probe=True,
                 skip_on_probe_failure=args.generator == "auto",
@@ -824,6 +829,9 @@ def metric_row_from_result(spec: RunSpec, result: dict, status: str) -> dict:
         "p99_itl_ms",
     ]:
         row[key] = result.get(key, "")
+    output_throughput = result.get("output_throughput")
+    if output_throughput not in (None, ""):
+        row["output_bp_per_second"] = output_throughput * spec.bp_per_output_token
     row["result_json"] = str(spec.run_dir / "benchmark.json")
     return row
 
@@ -848,6 +856,7 @@ def base_summary_row(spec: RunSpec, status: str) -> dict:
         "total_output_tokens": "",
         "request_throughput": "",
         "output_throughput": "",
+        "output_bp_per_second": "",
         "total_token_throughput": "",
         "mean_ttft_ms": "",
         "mean_tpot_ms": "",
