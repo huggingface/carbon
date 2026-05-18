@@ -109,28 +109,30 @@ def _shard_worker(args):
     scoring_method = "bp-level" if use_bp_level else "token-level"
 
     # Detect k-mer size and BOS token based on model name (for token-level scoring)
-    model_lower = model.lower()
-    if "carbon" in model_lower:
-        kmer_size = 6
-        bos_token = "<dna>"
-    elif "generator" in model_lower:
-        kmer_size = 6
-        bos_token = "<s>"
-    else:
-        raise ValueError(f"Unsupported model name: {model}")
-
-    # Preprocess sequences for token-level scoring
     if not use_bp_level:
-        for item in items:
-            seq = item["seq"]
-            truncated_len = (len(seq) // kmer_size) * kmer_size
-            item["seq"] = bos_token + seq[:truncated_len]
+        model_lower = model.lower()
+        if "carbon" in model_lower:
+            kmer_size = 6
+            bos_token = "<dna>"
+        elif "generator" in model_lower:
+            kmer_size = 6
+            bos_token = "<s>"
+        else:
+            raise ValueError(f"Unsupported model name: {model}")
 
     out = []
     with tqdm(total=len(items), desc=f"gpu{shard_id} ({scoring_method})", unit="seq") as pbar:
         for i in range(0, len(items), batch_size):
             batch = items[i : i + batch_size]
-            seqs = [b["seq"] for b in batch]
+
+            # Extract and preprocess sequences based on scoring method
+            if use_bp_level:
+                seqs = [b["seq"] for b in batch]
+            else:
+                seqs = [
+                    bos_token + b["seq"][:((len(b["seq"]) // kmer_size) * kmer_size)]
+                    for b in batch
+                ]
 
             with torch.no_grad():
                 if use_bp_level:
