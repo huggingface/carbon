@@ -23,7 +23,6 @@ EVO2_BENCHMARK_SCRIPT = REPO_ROOT / "evaluation" / "scripts" / "benchmark_evo2_s
 DEFAULT_OUTPUT_ROOT = REPO_ROOT / "scratch" / "serving_benchmarks"
 DEFAULT_CARBON_MODEL = "HuggingFaceBio/Carbon-3B"
 DEFAULT_CARBON_DRAFT_MODEL = "HuggingFaceBio/Carbon-500M"
-DEFAULT_CARBON_VLLM_ARCHITECTURE_OVERRIDE = "LlamaForCausalLM"
 DEFAULT_GENERATOR_MODEL = "GenerTeam/GENERator-v2-eukaryote-3b-base"
 DEFAULT_EVO2_MODEL = "evo2_7b"
 SUMMARY_FIELDS = [
@@ -95,8 +94,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--split", default="test")
     parser.add_argument("--num-prompts", type=int, default=16)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--input-bp", type=int, default=1000)
-    parser.add_argument("--output-bp", type=int, default=1000)
+    parser.add_argument("--input-bp", type=int, default=1080)
+    parser.add_argument("--output-bp", type=int, default=1080)
     parser.add_argument("--bp-per-token", type=int, default=6)
     parser.add_argument("--carbon-model", default=DEFAULT_CARBON_MODEL)
     parser.add_argument(
@@ -124,16 +123,6 @@ def parse_args() -> argparse.Namespace:
         "--carbon-draft-code-revision",
         default=None,
         help="Draft Carbon code revision recorded in --speculative-config.",
-    )
-    parser.add_argument(
-        "--carbon-vllm-architecture-override",
-        default=DEFAULT_CARBON_VLLM_ARCHITECTURE_OVERRIDE,
-        help=(
-            "HF architecture override for Carbon vLLM servers. The default "
-            "forces vLLM's native Llama implementation and avoids the "
-            "Transformers-backend attention-name collision in speculative "
-            "decoding. Pass an empty value to disable."
-        ),
     )
     parser.add_argument(
         "--carbon-speculative-tokens",
@@ -540,14 +529,6 @@ def carbon_server_extra_args(args: argparse.Namespace) -> list[str]:
         extra_args.extend(["--code-revision", args.carbon_code_revision])
     if args.carbon_tokenizer_revision:
         extra_args.extend(["--tokenizer-revision", args.carbon_tokenizer_revision])
-
-    architecture = args.carbon_vllm_architecture_override.strip()
-    if not architecture:
-        return extra_args
-    hf_overrides = {"architectures": [architecture]}
-    extra_args.extend(
-        ["--hf-overrides", json.dumps(hf_overrides, separators=(",", ":"))]
-    )
     return extra_args
 
 
@@ -652,9 +633,6 @@ def build_run_specs(
             "carbon_tokenizer_revision": args.carbon_tokenizer_revision or "",
             "carbon_draft_revision": args.carbon_draft_revision or "",
             "carbon_draft_code_revision": args.carbon_draft_code_revision or "",
-            "vllm_architecture_override": (
-                args.carbon_vllm_architecture_override.strip()
-            ),
         }
         specs.append(
             RunSpec(
