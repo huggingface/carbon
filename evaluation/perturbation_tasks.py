@@ -98,16 +98,13 @@ def _shard_worker(args):
     torch.cuda.set_device(shard_id)
     device = f"cuda:{shard_id}"
 
-    from transformers_compat import patch_generator_sample, patch_legacy_tokenizer_base
 
-    patch_legacy_tokenizer_base()
     tok = AutoTokenizer.from_pretrained(model, revision=revision, trust_remote_code=True)
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
     m = AutoModelForCausalLM.from_pretrained(
         model, revision=revision, trust_remote_code=True, dtype=getattr(torch, dtype)
     ).to(device).eval()
-    patch_generator_sample(m)
 
     # Check if model has score_sequence method for bp-level scoring
     use_bp_level = hasattr(m, "score_sequence")

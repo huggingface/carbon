@@ -182,9 +182,7 @@ def _prefix(args) -> str:
 
 def _load_hf(args):
     from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
-    from transformers_compat import patch_generator_sample, patch_legacy_tokenizer_base
 
-    patch_legacy_tokenizer_base()
     tokenizer = AutoTokenizer.from_pretrained(args.model, revision=args.revision, trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -219,7 +217,6 @@ def _load_hf(args):
         **model_kwargs,
     )
     model.eval()
-    patch_generator_sample(model)
     return model, tokenizer
 
 
