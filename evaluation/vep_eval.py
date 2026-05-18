@@ -88,16 +88,12 @@ def _revcomp(seq: str) -> str:
 
 
 def _shard_worker(args):
-    """Score one GPU shard using bp-level score_sequence. Returns [(uid, log_likelihood), ...]."""
+    """Score one GPU shard. Uses bp-level score_sequence if available, otherwise token-level scoring."""
     shard_id, items, model, revision, dtype, batch_size = args
     torch.cuda.set_device(shard_id)
     device = f"cuda:{shard_id}"
 
-    from transformers_compat import (
-        patch_generator_sample,
-        patch_legacy_tokenizer_base,
-        score_dna_sequence_fallback,
-    )
+    from transformers_compat import patch_generator_sample, patch_legacy_tokenizer_base
 
     patch_legacy_tokenizer_base()
     tok = AutoTokenizer.from_pretrained(model, revision=revision, trust_remote_code=True)
@@ -108,26 +104,69 @@ def _shard_worker(args):
     ).to(device).eval()
     patch_generator_sample(m)
 
+    # Check if model has score_sequence method for bp-level scoring
+    use_bp_level = hasattr(m, "score_sequence")
+    scoring_method = "bp-level" if use_bp_level else "token-level"
+
+    # Detect k-mer size and BOS token based on model name (for token-level scoring)
+    if not use_bp_level:
+        model_lower = model.lower()
+        if "carbon" in model_lower:
+            kmer_size = 6
+            bos_token = "<dna>"
+        elif "generator" in model_lower:
+            kmer_size = 6
+            bos_token = "<s>"
+        else:
+            raise ValueError(f"Unsupported model name: {model}")
+
     out = []
-    with tqdm(total=len(items), desc=f"gpu{shard_id}", unit="seq") as pbar:
+    with tqdm(total=len(items), desc=f"gpu{shard_id} ({scoring_method})", unit="seq") as pbar:
         for i in range(0, len(items), batch_size):
             batch = items[i : i + batch_size]
-            seqs = [b["seq"] for b in batch]
 
-            # Use score_sequence for bp-level scoring
+            # Extract and preprocess sequences based on scoring method
+            if use_bp_level:
+                seqs = [b["seq"] for b in batch]
+            else:
+                seqs = [
+                    bos_token + b["seq"][:((len(b["seq"]) // kmer_size) * kmer_size)]
+                    for b in batch
+                ]
+
             with torch.no_grad():
-                if len(seqs) == 1 and hasattr(m, "score_sequence"):
-                    _, actual_probs = m.score_sequence(seqs[0])
-                    actual_probs_list = [actual_probs]
-                elif hasattr(m, "score_sequence"):
-                    _, actual_probs_list = m.score_sequence(seqs)
-                else:
-                    _, actual_probs_list = score_dna_sequence_fallback(m, tok, seqs)
+                if use_bp_level:
+                    # BP-level scoring using score_sequence
+                    if len(seqs) == 1:
+                        _, actual_probs = m.score_sequence(seqs[0])
+                        actual_probs_list = [actual_probs]
+                    else:
+                        _, actual_probs_list = m.score_sequence(seqs)
 
-            # Compute log-likelihood for each sequence
-            for j, b in enumerate(batch):
-                log_likelihood = torch.log(actual_probs_list[j]).mean().item()
-                out.append((b["uid"], float(log_likelihood)))
+                    # Compute mean log-prob per base
+                    for j, b in enumerate(batch):
+                        mean_logp = torch.log(actual_probs_list[j]).mean().item()
+                        out.append((b["uid"], float(mean_logp)))
+                else:
+                    # Token-level scoring
+                    enc = tok(seqs, return_tensors="pt", padding=True, truncation=False,
+                             add_special_tokens=False)
+                    ids = enc["input_ids"].to(device)
+                    attn = enc["attention_mask"].to(device)
+
+                    logits = m(input_ids=ids, attention_mask=attn).logits[:, :-1, :]
+                    targets = ids[:, 1:]
+                    mask = attn[:, 1:].float()
+
+                    # Compute log probabilities
+                    logp = torch.log_softmax(logits, dim=-1)
+                    token_logp = logp.gather(2, targets.unsqueeze(-1)).squeeze(-1)
+
+                    # Mean log-prob per token (masked)
+                    seq_logp = (token_logp * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1)
+
+                    for j, b in enumerate(batch):
+                        out.append((b["uid"], float(seq_logp[j].item())))
 
             pbar.update(len(batch))
     return out
@@ -139,6 +178,9 @@ def score_hf(df: pd.DataFrame, args) -> tuple[np.ndarray, np.ndarray]:
     for i, row in df.iterrows():
         items.append({"uid": f"{i}_ref", "seq": row["ref_seq"]})
         items.append({"uid": f"{i}_var", "seq": row["var_seq"]})
+        if args.rev_comp_avg:
+            items.append({"uid": f"{i}_ref_rc", "seq": _revcomp(row["ref_seq"])})
+            items.append({"uid": f"{i}_var_rc", "seq": _revcomp(row["var_seq"])})
 
     # Dedup identical sequences (many variants share the same ref window)
     seen, uniq = {}, []
@@ -170,6 +212,12 @@ def score_hf(df: pd.DataFrame, args) -> tuple[np.ndarray, np.ndarray]:
 
     ref = np.array([seq_to_logp[r["ref_seq"]] for _, r in df.iterrows()])
     var = np.array([seq_to_logp[r["var_seq"]] for _, r in df.iterrows()])
+
+    if args.rev_comp_avg:
+        ref_rc = np.array([seq_to_logp[_revcomp(r["ref_seq"])] for _, r in df.iterrows()])
+        var_rc = np.array([seq_to_logp[_revcomp(r["var_seq"])] for _, r in df.iterrows()])
+        return ref, var, ref_rc, var_rc
+
     return ref, var
 
 
@@ -195,6 +243,16 @@ def score_evo2(df: pd.DataFrame, args) -> tuple[np.ndarray, np.ndarray]:
     ref_scores = np.array(model.score_sequences(ref_seqs))
     print(f"  scoring {len(var_seqs)} variant sequences")
     var_scores = np.array(model.score_sequences(var_seqs))
+
+    if args.rev_comp_avg:
+        ref_seqs_rc = [_revcomp(seq) for seq in ref_seqs]
+        var_seqs_rc = [_revcomp(seq) for seq in var_seqs]
+        print(f"  scoring {len(ref_seqs_rc)} unique reference reverse-complement sequences")
+        ref_scores_rc = np.array(model.score_sequences(ref_seqs_rc))
+        print(f"  scoring {len(var_seqs_rc)} variant reverse-complement sequences")
+        var_scores_rc = np.array(model.score_sequences(var_seqs_rc))
+        return ref_scores[ref_lookup], var_scores, ref_scores_rc[ref_lookup], var_scores_rc
+
     return ref_scores[ref_lookup], var_scores
 
 
@@ -213,19 +271,12 @@ def main():
     score_fn = score_evo2 if args.backend == "evo2" else score_hf
 
     t0 = time.time()
-    ref_logp, var_logp = score_fn(df, args)
-    delta = var_logp - ref_logp
-
     if args.rev_comp_avg:
-        # Strand-symmetric scoring: also score the reverse-complement of each
-        # (ref, var) pair and average the two deltas. Carbon is trained on both
-        # strands so reverse-complement is in-distribution.
-        print("\n--- reverse-complement pass ---")
-        df_rev = df.copy()
-        df_rev["ref_seq"] = df["ref_seq"].apply(_revcomp)
-        df_rev["var_seq"] = df["var_seq"].apply(_revcomp)
-        ref_logp_rev, var_logp_rev = score_fn(df_rev, args)
-        delta = (delta + (var_logp_rev - ref_logp_rev)) / 2
+        ref_logp, var_logp, ref_logp_rc, var_logp_rc = score_fn(df, args)
+        delta = ((var_logp - ref_logp) + (var_logp_rc - ref_logp_rc)) / 2
+    else:
+        ref_logp, var_logp = score_fn(df, args)
+        delta = var_logp - ref_logp
     print(f"Scoring took {time.time() - t0:.1f}s")
 
     df["ref_logp"] = ref_logp

@@ -77,7 +77,6 @@ def parse_args():
                    help="HF dataset config. Defaults to the per-task subset.")
     p.add_argument("--split", default="test")
     p.add_argument("--output_dir", default="./results/perturbation_tasks")
-    p.add_argument("--max_length", type=int, default=8192)
     p.add_argument("--batch_size", type=int, default=16)
     p.add_argument("--bf16", action="store_true")
     return p.parse_args()
@@ -94,16 +93,12 @@ def load_df(args) -> pd.DataFrame:
 
 
 def _shard_worker(args):
-    """Score one GPU shard using bp-level score_sequence. Returns [(uid, log_likelihood), ...]."""
-    shard_id, items, model, revision, dtype, batch_size, max_length = args
+    """Score one GPU shard. Uses bp-level score_sequence if available, otherwise token-level scoring."""
+    shard_id, items, model, revision, dtype, batch_size = args
     torch.cuda.set_device(shard_id)
     device = f"cuda:{shard_id}"
 
-    from transformers_compat import (
-        patch_generator_sample,
-        patch_legacy_tokenizer_base,
-        score_dna_sequence_fallback,
-    )
+    from transformers_compat import patch_generator_sample, patch_legacy_tokenizer_base
 
     patch_legacy_tokenizer_base()
     tok = AutoTokenizer.from_pretrained(model, revision=revision, trust_remote_code=True)
@@ -114,36 +109,76 @@ def _shard_worker(args):
     ).to(device).eval()
     patch_generator_sample(m)
 
+    # Check if model has score_sequence method for bp-level scoring
+    use_bp_level = hasattr(m, "score_sequence")
+    scoring_method = "bp-level" if use_bp_level else "token-level"
+
+    # Detect k-mer size and BOS token based on model name (for token-level scoring)
+    if not use_bp_level:
+        model_lower = model.lower()
+        if "carbon" in model_lower:
+            kmer_size = 6
+            bos_token = "<dna>"
+        elif "generator" in model_lower:
+            kmer_size = 6
+            bos_token = "<s>"
+        else:
+            raise ValueError(f"Unsupported model name: {model}")
+
     out = []
-    with tqdm(total=len(items), desc=f"gpu{shard_id}", unit="seq") as pbar:
+    with tqdm(total=len(items), desc=f"gpu{shard_id} ({scoring_method})", unit="seq") as pbar:
         for i in range(0, len(items), batch_size):
             batch = items[i : i + batch_size]
-            seqs = [b["seq"] for b in batch]
-            # Truncate sequences if needed
-            seqs = [s[:max_length] if len(s) > max_length else s for s in seqs]
 
-            # Use score_sequence for bp-level scoring when the model exposes it,
-            # otherwise fall back to the shared DNA k-mer scorer.
+            # Extract and preprocess sequences based on scoring method
+            if use_bp_level:
+                seqs = [b["seq"] for b in batch]
+            else:
+                seqs = [
+                    bos_token + b["seq"][:((len(b["seq"]) // kmer_size) * kmer_size)]
+                    for b in batch
+                ]
+
             with torch.no_grad():
-                if len(seqs) == 1 and hasattr(m, "score_sequence"):
-                    _, actual_probs = m.score_sequence(seqs[0])
-                    actual_probs_list = [actual_probs]
-                elif hasattr(m, "score_sequence"):
-                    _, actual_probs_list = m.score_sequence(seqs)
-                else:
-                    _, actual_probs_list = score_dna_sequence_fallback(m, tok, seqs)
+                if use_bp_level:
+                    # BP-level scoring using score_sequence
+                    if len(seqs) == 1:
+                        _, actual_probs = m.score_sequence(seqs[0])
+                        actual_probs_list = [actual_probs]
+                    else:
+                        _, actual_probs_list = m.score_sequence(seqs)
 
-            # Compute mean log-prob per base
-            for j, b in enumerate(batch):
-                mean_logp = torch.log(actual_probs_list[j]).mean().item()
-                out.append((b["uid"], float(mean_logp)))
+                    # Compute mean log-prob per base
+                    for j, b in enumerate(batch):
+                        mean_logp = torch.log(actual_probs_list[j]).mean().item()
+                        out.append((b["uid"], float(mean_logp)))
+                else:
+                    # Token-level scoring
+                    enc = tok(seqs, return_tensors="pt", padding=True, truncation=False,
+                             add_special_tokens=False)
+                    ids = enc["input_ids"].to(device)
+                    attn = enc["attention_mask"].to(device)
+
+                    logits = m(input_ids=ids, attention_mask=attn).logits[:, :-1, :]
+                    targets = ids[:, 1:]
+                    mask = attn[:, 1:].float()
+
+                    # Compute log probabilities
+                    logp = torch.log_softmax(logits, dim=-1)
+                    token_logp = logp.gather(2, targets.unsqueeze(-1)).squeeze(-1)
+
+                    # Mean log-prob per token (masked)
+                    seq_logp = (token_logp * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1)
+
+                    for j, b in enumerate(batch):
+                        out.append((b["uid"], float(seq_logp[j].item())))
 
             pbar.update(len(batch))
     return out
 
 
 @torch.no_grad()
-def score_hf(seqs, model, revision, dtype_str, batch_size: int, max_length: int):
+def score_hf(seqs, model, revision, dtype_str, batch_size: int):
     """Multi-GPU bp-level scoring across all sequences."""
     items = [{"uid": str(i), "seq": s} for i, s in enumerate(seqs)]
 
@@ -154,7 +189,7 @@ def score_hf(seqs, model, revision, dtype_str, batch_size: int, max_length: int)
 
     shard_size = (len(items) + n_gpus - 1) // n_gpus
     work = [
-        (g, items[g * shard_size : (g + 1) * shard_size], model, revision, dtype_str, batch_size, max_length)
+        (g, items[g * shard_size : (g + 1) * shard_size], model, revision, dtype_str, batch_size)
         for g in range(n_gpus)
         if g * shard_size < len(items)
     ]
@@ -207,7 +242,7 @@ def main():
         all_scores = score_evo2(all_seqs, args.batch_size, model_name)
     else:
         dtype_str = "bfloat16" if args.bf16 else "float32"
-        all_scores = score_hf(all_seqs, args.model, args.revision, dtype_str, args.batch_size, args.max_length)
+        all_scores = score_hf(all_seqs, args.model, args.revision, dtype_str, args.batch_size)
 
     # Split back into pos and neg
     pos_scores = all_scores[:n_pairs]
