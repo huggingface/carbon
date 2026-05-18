@@ -88,16 +88,12 @@ def _revcomp(seq: str) -> str:
 
 
 def _shard_worker(args):
-    """Score one GPU shard using bp-level score_sequence. Returns [(uid, log_likelihood), ...]."""
+    """Score one GPU shard. Uses bp-level score_sequence if available, otherwise token-level scoring."""
     shard_id, items, model, revision, dtype, batch_size = args
     torch.cuda.set_device(shard_id)
     device = f"cuda:{shard_id}"
 
-    from transformers_compat import (
-        patch_generator_sample,
-        patch_legacy_tokenizer_base,
-        score_dna_sequence_fallback,
-    )
+    from transformers_compat import patch_generator_sample, patch_legacy_tokenizer_base
 
     patch_legacy_tokenizer_base()
     tok = AutoTokenizer.from_pretrained(model, revision=revision, trust_remote_code=True)
@@ -108,26 +104,67 @@ def _shard_worker(args):
     ).to(device).eval()
     patch_generator_sample(m)
 
+    # Check if model has score_sequence method for bp-level scoring
+    use_bp_level = hasattr(m, "score_sequence")
+    scoring_method = "bp-level" if use_bp_level else "token-level"
+
+    # Detect k-mer size and BOS token based on model name (for token-level scoring)
+    model_lower = model.lower()
+    if "carbon" in model_lower:
+        kmer_size = 6
+        bos_token = "<dna>"
+    elif "generator" in model_lower:
+        kmer_size = 6
+        bos_token = "<s>"
+    else:
+        raise ValueError(f"Unsupported model name: {model}")
+
+    # Preprocess sequences for token-level scoring
+    if not use_bp_level:
+        for item in items:
+            seq = item["seq"]
+            truncated_len = (len(seq) // kmer_size) * kmer_size
+            item["seq"] = bos_token + seq[:truncated_len]
+
     out = []
-    with tqdm(total=len(items), desc=f"gpu{shard_id}", unit="seq") as pbar:
+    with tqdm(total=len(items), desc=f"gpu{shard_id} ({scoring_method})", unit="seq") as pbar:
         for i in range(0, len(items), batch_size):
             batch = items[i : i + batch_size]
             seqs = [b["seq"] for b in batch]
 
-            # Use score_sequence for bp-level scoring
             with torch.no_grad():
-                if len(seqs) == 1 and hasattr(m, "score_sequence"):
-                    _, actual_probs = m.score_sequence(seqs[0])
-                    actual_probs_list = [actual_probs]
-                elif hasattr(m, "score_sequence"):
-                    _, actual_probs_list = m.score_sequence(seqs)
-                else:
-                    _, actual_probs_list = score_dna_sequence_fallback(m, tok, seqs)
+                if use_bp_level:
+                    # BP-level scoring using score_sequence
+                    if len(seqs) == 1:
+                        _, actual_probs = m.score_sequence(seqs[0])
+                        actual_probs_list = [actual_probs]
+                    else:
+                        _, actual_probs_list = m.score_sequence(seqs)
 
-            # Compute log-likelihood for each sequence
-            for j, b in enumerate(batch):
-                log_likelihood = torch.log(actual_probs_list[j]).mean().item()
-                out.append((b["uid"], float(log_likelihood)))
+                    # Compute mean log-prob per base
+                    for j, b in enumerate(batch):
+                        mean_logp = torch.log(actual_probs_list[j]).mean().item()
+                        out.append((b["uid"], float(mean_logp)))
+                else:
+                    # Token-level scoring
+                    enc = tok(seqs, return_tensors="pt", padding=True, truncation=False,
+                             add_special_tokens=False)
+                    ids = enc["input_ids"].to(device)
+                    attn = enc["attention_mask"].to(device)
+
+                    logits = m(input_ids=ids, attention_mask=attn).logits[:, :-1, :]
+                    targets = ids[:, 1:]
+                    mask = attn[:, 1:].float()
+
+                    # Compute log probabilities
+                    logp = torch.log_softmax(logits, dim=-1)
+                    token_logp = logp.gather(2, targets.unsqueeze(-1)).squeeze(-1)
+
+                    # Mean log-prob per token (masked)
+                    seq_logp = (token_logp * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1)
+
+                    for j, b in enumerate(batch):
+                        out.append((b["uid"], float(seq_logp[j].item())))
 
             pbar.update(len(batch))
     return out
