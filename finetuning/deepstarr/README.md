@@ -2,18 +2,18 @@
 
 This recipe fine-tunes Carbon on `GenerTeam/DeepSTARR-enhancer-activity`.
 It trains on `train`, selects checkpoints by validation `pcc_mean`, and writes
-final validation/test PCC plus log-space PCC for the Dev and Hk targets.
+validation/test PCC metrics for the Dev and Hk targets.
 
-## What Is Included
+## Files
 
-- `deepstarr_train.py`: minimal DeepSTARR regression training script.
+- `deepstarr_train.py`: Trainer-based DeepSTARR regression script.
 - `fsdp2_carbon.yaml`: Accelerate FSDP2 config for Carbon.
-- `deepstarr_regression.slurm`: Slurm template for the minimal recipe.
+- `deepstarr_regression.slurm`: Slurm wrapper for the same script.
 
 ## Environment
 
-Install the normal Carbon requirements, then make sure the finetuning runtime
-pieces are new enough for FSDP2:
+Install the normal Carbon requirements, then make sure the finetuning runtime is
+available:
 
 ```sh
 pip install -r requirements.txt
@@ -23,8 +23,8 @@ hf auth whoami
 
 ## Smoke Run
 
-This command exercises tokenization, FSDP2 setup, training, and metric writing
-without running a full experiment:
+This exercises tokenization, model loading, FSDP2, training, checkpointing, and
+metric writing on a small subset:
 
 ```sh
 accelerate launch \
@@ -38,16 +38,15 @@ accelerate launch \
   --max_steps 10 \
   --eval_steps 5 \
   --per_device_train_batch_size 1 \
-  --per_device_eval_batch_size 2
+  --per_device_eval_batch_size 2 \
+  --skip_test
 ```
 
-## 3B Regression Recipe
+## Full 3B Run
 
-The best 3B family of runs used a single GPU, global batch 32, Pearson loss,
-`auto_dna_tags=True`, no weight decay, AdamW with beta2 `0.95`, and validation
-every about 0.1 epoch. The best observed checkpoint came from continuing a
-1.5-epoch run to 2.5 total epochs; the command below is the clean single-stage
-version of that recipe.
+The defaults use full fine-tuning, Pearson loss, `auto_dna_tags=True`, raw DNA
+truncation to a multiple of 6, no weight decay, bf16 compute, FlashAttention 3,
+and AdamW with beta2 `0.95`.
 
 ```sh
 accelerate launch \
@@ -59,24 +58,21 @@ accelerate launch \
   --run_name carbon-3b-regression-train
 ```
 
-To reproduce the continuation-style run, pass the previous checkpoint:
-
-```sh
---resume_from_checkpoint scratch/deepstarr/previous-run/checkpoint-18858
-```
+Use `--save_model` to write a copy of the best loaded model to `best_model/`.
 
 ## Slurm
 
-The Slurm template uses the same defaults as the main run and lets you override
-the common knobs with environment variables. Submit it from the repository root;
-it sources `~/.bashrc` before running.
+Submit the same recipe from the repository root:
 
 ```sh
 RUN_NAME=carbon-3b-deepstarr-full-ft \
-LEARNING_RATE=2e-5 \
-NUM_TRAIN_EPOCHS=2.5 \
 sbatch finetuning/deepstarr/deepstarr_regression.slurm
 ```
+
+Common overrides include `MAX_STEPS`, `MAX_TRAIN_SAMPLES`,
+`MAX_EVAL_SAMPLES`, `EVAL_STEPS`, `NUM_TRAIN_EPOCHS`, `LEARNING_RATE`,
+`PER_DEVICE_TRAIN_BATCH_SIZE`, `PER_DEVICE_EVAL_BATCH_SIZE`, `SKIP_TEST`, and
+`SAVE_MODEL`.
 
 ## Outputs
 
@@ -85,10 +81,9 @@ The script writes:
 - `run_config.json`
 - `train_results.json`
 - `validation_metrics.json`
-- `test_metrics.json`
+- `test_metrics.json` unless `--skip_test` is set
 - Trainer checkpoints, with the best checkpoint selected by validation PCC
-- `best_model/` only when `--save_final_model` is enabled
+- `best_model/` when `--save_model` is set
 
-The primary model-selection metric is `pcc_mean`. The metric files also include
-`*_pcc_dev_scaled`, `*_pcc_hk_scaled`, `*_log_pcc_dev`, `*_log_pcc_hk`, and
-`*_log_pcc_mean`.
+The primary model-selection metric is `pcc_mean`. Metric files also include
+Dev/Hk PCC and log-label PCC values.

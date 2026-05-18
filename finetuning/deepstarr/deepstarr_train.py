@@ -1,10 +1,4 @@
-"""Minimal DeepSTARR regression fine-tuning script for Carbon.
-
-The defaults reproduce the strongest Carbon 3B regression setup we found:
-full fine-tuning, sequence-classification regression head, Pearson loss,
-dataset-scaled Dev/Hk labels, auto DNA tags, no weight decay, and validation
-by mean PCC.
-"""
+"""Fine-tune Carbon on DeepSTARR regression with Hugging Face Trainer."""
 
 from __future__ import annotations
 
@@ -36,9 +30,7 @@ logger = logging.getLogger(__name__)
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Carbon DeepSTARR regression fine-tuning"
-    )
+    parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", default=MODEL_NAME)
     parser.add_argument("--revision", default=None)
     parser.add_argument("--dataset_name", default=DATASET_NAME)
@@ -48,6 +40,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--run_name", default=None)
     parser.add_argument("--resume_from_checkpoint", default=None)
+    parser.add_argument("--seed", type=int, default=42)
+
     parser.add_argument("--num_train_epochs", type=float, default=2.5)
     parser.add_argument("--max_steps", type=int, default=-1)
     parser.add_argument("--learning_rate", type=float, default=2e-5)
@@ -56,8 +50,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lr_scheduler_type", default="reduce_lr_on_plateau")
     parser.add_argument(
         "--lr_scheduler_kwargs",
-        default='{"mode":"max","factor":0.5,"patience":2,"threshold":0.0001}',
-        help="JSON kwargs passed to the Transformers LR scheduler.",
+        default=None,
+        help="Optional JSON kwargs passed to the Transformers LR scheduler.",
     )
     parser.add_argument("--per_device_train_batch_size", type=int, default=32)
     parser.add_argument("--per_device_eval_batch_size", type=int, default=64)
@@ -65,18 +59,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--eval_steps", type=int, default=None)
     parser.add_argument("--save_total_limit", type=int, default=1)
     parser.add_argument("--logging_steps", type=int, default=20)
+
     parser.add_argument("--max_length", type=int, default=512)
     parser.add_argument(
         "--dna_mode",
         choices=["auto_dna_tags", "dna_tags", "plain"],
         default="auto_dna_tags",
-        help="Use auto_dna_tags=True, explicit <dna>...</dna> wrapping, or raw DNA.",
+        help="How raw DNA strings are passed to the Carbon tokenizer.",
     )
-    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--truncate_to_multiple_of",
+        type=int,
+        default=6,
+        help="Trim raw DNA sequence lengths to this multiple before tokenization.",
+    )
     parser.add_argument("--max_train_samples", type=int, default=None)
     parser.add_argument("--max_eval_samples", type=int, default=None)
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--map_num_proc", type=int, default=8)
+
     parser.add_argument(
         "--torch_dtype",
         choices=["auto", "float32", "bfloat16", "float16"],
@@ -94,21 +95,32 @@ def parse_args() -> argparse.Namespace:
         default="kernels-community/flash-attn3",
     )
     parser.add_argument(
-        "--trust_remote_code", action=argparse.BooleanOptionalAction, default=True
+        "--trust_remote_code",
+        action=argparse.BooleanOptionalAction,
+        default=True,
     )
     parser.add_argument("--skip_test", action="store_true")
-    parser.add_argument("--save_final_model", action="store_true")
+    parser.add_argument("--save_model", action="store_true")
     args = parser.parse_args()
 
-    try:
-        args.lr_scheduler_kwargs = json.loads(args.lr_scheduler_kwargs)
-    except json.JSONDecodeError as exc:
-        parser.error(f"--lr_scheduler_kwargs must be valid JSON: {exc}")
-    if not isinstance(args.lr_scheduler_kwargs, dict):
-        parser.error("--lr_scheduler_kwargs must decode to a JSON object")
     if args.fp16 and args.bf16:
         parser.error("Use at most one of --fp16 and --bf16")
+    if args.lr_scheduler_kwargs is None:
+        args.lr_scheduler_kwargs = default_scheduler_kwargs(args.lr_scheduler_type)
+    else:
+        try:
+            args.lr_scheduler_kwargs = json.loads(args.lr_scheduler_kwargs)
+        except json.JSONDecodeError as exc:
+            parser.error(f"--lr_scheduler_kwargs must be valid JSON: {exc}")
+        if not isinstance(args.lr_scheduler_kwargs, dict):
+            parser.error("--lr_scheduler_kwargs must decode to a JSON object")
     return args
+
+
+def default_scheduler_kwargs(scheduler_type: str) -> dict[str, Any]:
+    if scheduler_type != "reduce_lr_on_plateau":
+        return {}
+    return {"mode": "max", "factor": 0.5, "patience": 2, "threshold": 0.0001}
 
 
 def torch_dtype_from_arg(dtype_name: str) -> Any:
@@ -144,38 +156,100 @@ def write_json(path: Path, payload: dict[str, Any]) -> None:
         handle.write("\n")
 
 
-def pearson_corr(x: np.ndarray, y: np.ndarray) -> float:
-    x = np.asarray(x, dtype=np.float64)
-    y = np.asarray(y, dtype=np.float64)
-    mask = np.isfinite(x) & np.isfinite(y)
+def pearson_corr(predictions: np.ndarray, labels: np.ndarray) -> float:
+    predictions = np.asarray(predictions, dtype=np.float64)
+    labels = np.asarray(labels, dtype=np.float64)
+    mask = np.isfinite(predictions) & np.isfinite(labels)
     if int(mask.sum()) < 2:
         return float("nan")
-    x = x[mask]
-    y = y[mask]
-    if float(np.std(x)) == 0.0 or float(np.std(y)) == 0.0:
+    predictions = predictions[mask]
+    labels = labels[mask]
+    if float(np.std(predictions)) == 0.0 or float(np.std(labels)) == 0.0:
         return float("nan")
-    return float(np.corrcoef(x, y)[0, 1])
+    return float(np.corrcoef(predictions, labels)[0, 1])
 
 
 def pearson_loss(
-    predictions: torch.Tensor,
-    labels: torch.Tensor,
-    eps: float = 1e-8,
+    logits: torch.Tensor, labels: torch.Tensor, eps: float = 1e-8
 ) -> torch.Tensor:
-    predictions = predictions.float()
-    labels = labels.to(dtype=predictions.dtype)
-    predictions = predictions - predictions.mean(dim=0, keepdim=True)
+    logits = logits.float()
+    labels = labels.to(dtype=logits.dtype)
+    logits = logits - logits.mean(dim=0, keepdim=True)
     labels = labels - labels.mean(dim=0, keepdim=True)
-    numerator = (predictions * labels).sum(dim=0)
-    pred_ss = predictions.square().sum(dim=0)
-    label_ss = labels.square().sum(dim=0)
-    corr = numerator / torch.sqrt((pred_ss * label_ss).clamp_min(eps))
-    return 1.0 - corr.mean()
+    numerator = (logits * labels).sum(dim=0)
+    denominator = torch.sqrt(
+        (logits.square().sum(dim=0) * labels.square().sum(dim=0)).clamp_min(eps)
+    )
+    return 1.0 - (numerator / denominator).mean()
+
+
+def as_2d_array(value: Any) -> np.ndarray:
+    if isinstance(value, tuple):
+        value = value[0]
+    array = np.asarray(value, dtype=np.float64)
+    if array.ndim == 1:
+        array = array.reshape(-1, 1)
+    return array
+
+
+def label_values(batch: dict[str, list[Any]]) -> list[list[float]]:
+    labels = [np.asarray(batch[column], dtype=np.float32) for column in SCALED_COLUMNS]
+    return np.stack(labels, axis=1).tolist()
+
+
+def trim_to_multiple(sequence: str, multiple: int) -> str:
+    if multiple <= 0:
+        return sequence
+    usable_length = len(sequence) - (len(sequence) % multiple)
+    return sequence[:usable_length]
+
+
+def prepare_sequences(sequences: list[Any], dna_mode: str, multiple: int) -> list[str]:
+    prepared = [
+        trim_to_multiple(str(sequence).strip(), multiple) for sequence in sequences
+    ]
+    if dna_mode == "dna_tags":
+        return [f"<dna>{sequence}</dna>" for sequence in prepared]
+    return prepared
+
+
+def select_limit(dataset: Any, limit: int | None) -> Any:
+    if limit is None or limit >= len(dataset):
+        return dataset
+    return dataset.select(range(limit))
+
+
+def compute_metrics(eval_pred: Any) -> dict[str, float]:
+    predictions = as_2d_array(eval_pred.predictions)
+    labels = as_2d_array(eval_pred.label_ids)
+    metrics = {}
+    pcc_values = []
+    for idx, target in enumerate(TARGET_NAMES):
+        pcc = pearson_corr(predictions[:, idx], labels[:, idx])
+        metrics[f"pcc_{target}"] = pcc
+        pcc_values.append(pcc)
+    metrics["pcc_mean"] = float(np.nanmean(pcc_values))
+    return metrics
+
+
+def compute_log_pcc_metrics(
+    prefix: str,
+    predictions: np.ndarray,
+    raw_dataset: Any,
+) -> dict[str, float]:
+    metrics = {}
+    pcc_values = []
+    for idx, target in enumerate(TARGET_NAMES):
+        labels = np.asarray(raw_dataset[RAW_LOG_COLUMNS[idx]], dtype=np.float64)
+        pcc = pearson_corr(predictions[:, idx], labels)
+        metrics[f"{prefix}_log_pcc_{target}"] = pcc
+        pcc_values.append(pcc)
+    metrics[f"{prefix}_log_pcc_mean"] = float(np.nanmean(pcc_values))
+    return metrics
 
 
 def initialize_missing_regression_head(
-    model: nn.Module,
-    missing_keys: list[str],
+    model: nn.Module, missing_keys: list[str]
 ) -> None:
     classifier = getattr(model, "score", None)
     if not isinstance(classifier, nn.Linear):
@@ -197,123 +271,7 @@ def initialize_missing_regression_head(
 
     if not torch.isfinite(classifier.weight.float()).all():
         raise RuntimeError("Regression head initialization produced non-finite values")
-
-
-def normalize_predictions(predictions: Any) -> np.ndarray:
-    if isinstance(predictions, tuple):
-        predictions = predictions[0]
-    predictions = np.asarray(predictions, dtype=np.float64)
-    if predictions.ndim == 1:
-        predictions = predictions.reshape(-1, 1)
-    return predictions
-
-
-def normalize_label_ids(label_ids: Any) -> np.ndarray:
-    if isinstance(label_ids, tuple):
-        label_ids = label_ids[0]
-    labels = np.asarray(label_ids, dtype=np.float64)
-    if labels.ndim == 1:
-        labels = labels.reshape(-1, 1)
-    return labels
-
-
-def label_values_from_batch(batch: dict[str, list[Any]]) -> list[list[float]]:
-    columns = [np.asarray(batch[column], dtype=np.float64) for column in SCALED_COLUMNS]
-    return np.stack(columns, axis=1).astype(np.float32).tolist()
-
-
-def fit_linear_calibration_from_arrays(
-    scaled: np.ndarray, raw_log: np.ndarray
-) -> tuple[float, float]:
-    scaled = np.asarray(scaled, dtype=np.float64)
-    raw_log = np.asarray(raw_log, dtype=np.float64)
-    mask = np.isfinite(scaled) & np.isfinite(raw_log)
-    if int(mask.sum()) < 2:
-        raise ValueError("Need at least two finite examples for calibration")
-    scaled = scaled[mask]
-    raw_log = raw_log[mask]
-    variance = float(np.var(scaled))
-    if variance == 0.0:
-        raise ValueError("Cannot calibrate with zero-variance labels")
-    slope = float(np.cov(scaled, raw_log, bias=True)[0, 1] / variance)
-    intercept = float(np.mean(raw_log) - slope * np.mean(scaled))
-    return slope, intercept
-
-
-def fit_log_calibration(train_dataset: Any) -> dict[str, dict[str, float]]:
-    calibration = {}
-    for target, scaled_col, raw_col in zip(
-        TARGET_NAMES, SCALED_COLUMNS, RAW_LOG_COLUMNS
-    ):
-        slope, intercept = fit_linear_calibration_from_arrays(
-            np.asarray(train_dataset[scaled_col], dtype=np.float64),
-            np.asarray(train_dataset[raw_col], dtype=np.float64),
-        )
-        calibration[target] = {"slope": slope, "intercept": intercept}
-    return calibration
-
-
-def compute_metrics(eval_pred: Any) -> dict[str, float]:
-    predictions = normalize_predictions(eval_pred.predictions)
-    labels = normalize_label_ids(eval_pred.label_ids)
-    metrics = {}
-    pcc_values = []
-    for idx, target in enumerate(TARGET_NAMES):
-        pcc = pearson_corr(predictions[:, idx], labels[:, idx])
-        metrics[f"pcc_{target}_scaled"] = pcc
-        pcc_values.append(pcc)
-    metrics["pcc_mean"] = float(np.nanmean(pcc_values))
-    return metrics
-
-
-def compute_full_metrics(
-    *,
-    prefix: str,
-    predictions: np.ndarray,
-    labels_scaled: np.ndarray,
-    raw_dataset: Any,
-    calibration: dict[str, dict[str, float]],
-) -> dict[str, float]:
-    predictions = normalize_predictions(predictions)
-    labels_scaled = np.asarray(labels_scaled, dtype=np.float64)
-    metrics = {}
-    scaled_pcc_values = []
-    log_pcc_values = []
-    for idx, target in enumerate(TARGET_NAMES):
-        scaled_pcc = pearson_corr(predictions[:, idx], labels_scaled[:, idx])
-        metrics[f"{prefix}_pcc_{target}_scaled"] = scaled_pcc
-        scaled_pcc_values.append(scaled_pcc)
-
-        cal = calibration[target]
-        pred_log = cal["slope"] * predictions[:, idx] + cal["intercept"]
-        raw_labels = np.asarray(raw_dataset[RAW_LOG_COLUMNS[idx]], dtype=np.float64)
-        log_pcc = pearson_corr(pred_log, raw_labels)
-        metrics[f"{prefix}_log_pcc_{target}"] = log_pcc
-        log_pcc_values.append(log_pcc)
-
-    metrics[f"{prefix}_pcc_mean"] = float(np.nanmean(scaled_pcc_values))
-    metrics[f"{prefix}_log_pcc_mean"] = float(np.nanmean(log_pcc_values))
-    return metrics
-
-
-def select_limit(dataset: Any, limit: int | None) -> Any:
-    if limit is None or limit >= len(dataset):
-        return dataset
-    return dataset.select(range(limit))
-
-
-def prepare_sequences(sequences: list[Any], dna_mode: str) -> list[str]:
-    prepared = [str(sequence).strip() for sequence in sequences]
-    if dna_mode == "dna_tags":
-        prepared = [
-            (
-                sequence
-                if sequence.startswith("<dna>") and sequence.endswith("</dna>")
-                else f"<dna>{sequence}</dna>"
-            )
-            for sequence in prepared
-        ]
-    return prepared
+    logger.info("Initialized missing regression head in fp32")
 
 
 class PearsonRegressionTrainer(Trainer):
@@ -337,20 +295,20 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
     args = parse_args()
-    output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
     set_seed(args.seed)
 
     from accelerate import PartialState
     from datasets import load_dataset
 
     state = PartialState()
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
     logger.info("Loading dataset %s", args.dataset_name)
-    raw_ds = load_dataset(args.dataset_name)
-    train_raw = select_limit(raw_ds["train"], args.max_train_samples)
-    validation_raw = select_limit(raw_ds["validation"], args.max_eval_samples)
-    test_raw = select_limit(raw_ds["test"], args.max_eval_samples)
-    calibration = fit_log_calibration(train_raw)
+    raw_dataset = load_dataset(args.dataset_name)
+    train_raw = select_limit(raw_dataset["train"], args.max_train_samples)
+    validation_raw = select_limit(raw_dataset["validation"], args.max_eval_samples)
+    test_raw = select_limit(raw_dataset["test"], args.max_eval_samples)
 
     logger.info("Loading tokenizer from %s", args.model)
     tokenizer = AutoTokenizer.from_pretrained(
@@ -366,41 +324,36 @@ def main() -> None:
         else:
             tokenizer.pad_token = tokenizer.eos_token
 
-    def tokenize_fn(batch: dict[str, list[Any]]) -> dict[str, Any]:
-        sequences = prepare_sequences(batch["sequence"], args.dna_mode)
+    def tokenize(batch: dict[str, list[Any]]) -> dict[str, Any]:
         tokenizer_kwargs = {}
         if args.dna_mode == "auto_dna_tags":
             tokenizer_kwargs["auto_dna_tags"] = True
         tokenized = tokenizer(
-            sequences,
+            prepare_sequences(
+                batch["sequence"],
+                dna_mode=args.dna_mode,
+                multiple=args.truncate_to_multiple_of,
+            ),
             truncation=True,
             max_length=args.max_length,
             padding=False,
             **tokenizer_kwargs,
         )
-        tokenized["labels"] = label_values_from_batch(batch)
+        tokenized["labels"] = label_values(batch)
         return tokenized
 
-    map_kwargs: dict[str, Any] = {"batched": True, "desc": "Tokenizing DeepSTARR"}
+    map_kwargs: dict[str, Any] = {
+        "batched": True,
+        "remove_columns": train_raw.column_names,
+        "desc": "Tokenizing DeepSTARR",
+    }
     if args.map_num_proc and args.map_num_proc > 1:
         map_kwargs["num_proc"] = args.map_num_proc
 
     with state.main_process_first():
-        train_ds = train_raw.map(
-            tokenize_fn,
-            remove_columns=train_raw.column_names,
-            **map_kwargs,
-        )
-        validation_ds = validation_raw.map(
-            tokenize_fn,
-            remove_columns=validation_raw.column_names,
-            **map_kwargs,
-        )
-        test_ds = test_raw.map(
-            tokenize_fn,
-            remove_columns=test_raw.column_names,
-            **map_kwargs,
-        )
+        train_dataset = train_raw.map(tokenize, **map_kwargs)
+        validation_dataset = validation_raw.map(tokenize, **map_kwargs)
+        test_dataset = test_raw.map(tokenize, **map_kwargs)
 
     logger.info("Loading model from %s", args.model)
     model_kwargs: dict[str, Any] = {
@@ -412,17 +365,17 @@ def main() -> None:
         model_kwargs["attn_implementation"] = args.attn_implementation
     model, loading_info = AutoModelForSequenceClassification.from_pretrained(
         args.model,
-        num_labels=2,
+        num_labels=len(TARGET_NAMES),
         problem_type="regression",
-        id2label={0: "Dev_scaled", 1: "Hk_scaled"},
-        label2id={"Dev_scaled": 0, "Hk_scaled": 1},
+        id2label={idx: f"{target}_scaled" for idx, target in enumerate(TARGET_NAMES)},
+        label2id={f"{target}_scaled": idx for idx, target in enumerate(TARGET_NAMES)},
         output_loading_info=True,
         **model_kwargs,
     )
     initialize_missing_regression_head(
-        model,
-        list(loading_info.get("missing_keys", [])),
+        model, list(loading_info.get("missing_keys", []))
     )
+
     if tokenizer.pad_token_id is not None:
         model.config.pad_token_id = tokenizer.pad_token_id
     if added_pad_token and len(tokenizer) > model.get_input_embeddings().num_embeddings:
@@ -436,15 +389,14 @@ def main() -> None:
         * args.gradient_accumulation_steps
         * max(1, world_size)
     )
-    steps_per_epoch = math.ceil(len(train_ds) / global_batch_size)
-    eval_steps = args.eval_steps or math.ceil(steps_per_epoch / 10)
+    steps_per_epoch = math.ceil(len(train_dataset) / global_batch_size)
+    eval_steps = args.eval_steps or max(1, math.ceil(steps_per_epoch / 10))
 
     run_config = {
         **vars(args),
         "effective_eval_steps": eval_steps,
         "global_train_batch_size": global_batch_size,
         "steps_per_epoch": steps_per_epoch,
-        "calibration": calibration,
     }
     if state.is_main_process:
         write_json(output_dir / "run_config.json", run_config)
@@ -489,8 +441,8 @@ def main() -> None:
     trainer = PearsonRegressionTrainer(
         model=model,
         args=training_args,
-        train_dataset=train_ds,
-        eval_dataset=validation_ds,
+        train_dataset=train_dataset,
+        eval_dataset=validation_dataset,
         processing_class=tokenizer,
         data_collator=DataCollatorWithPadding(tokenizer=tokenizer),
         compute_metrics=compute_metrics,
@@ -499,39 +451,26 @@ def main() -> None:
     train_result = trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
     trainer.save_metrics("train", train_result.metrics)
     trainer.save_state()
-    if args.save_final_model:
+    if args.save_model:
         trainer.save_model(str(output_dir / "best_model"))
 
     run_config["trainer_best_model_checkpoint"] = trainer.state.best_model_checkpoint
     if state.is_main_process:
         write_json(output_dir / "run_config.json", run_config)
 
-    def write_split_results(
-        split: str, tokenized_dataset: Any, raw_dataset: Any
-    ) -> None:
-        prediction_output = trainer.predict(
-            tokenized_dataset,
-            metric_key_prefix=split,
-        )
-        predictions = normalize_predictions(prediction_output.predictions)
-        labels_scaled = normalize_label_ids(prediction_output.label_ids)
+    def evaluate_split(split: str, tokenized_dataset: Any, raw_split: Any) -> None:
+        output = trainer.predict(tokenized_dataset, metric_key_prefix=split)
+        predictions = as_2d_array(output.predictions)
         metrics = {
-            **run_config,
-            **prediction_output.metrics,
-            **compute_full_metrics(
-                prefix=split,
-                predictions=predictions,
-                labels_scaled=labels_scaled,
-                raw_dataset=raw_dataset,
-                calibration=calibration,
-            ),
+            **output.metrics,
+            **compute_log_pcc_metrics(split, predictions, raw_split),
         }
         if trainer.is_world_process_zero():
             write_json(output_dir / f"{split}_metrics.json", metrics)
 
-    write_split_results("validation", validation_ds, validation_raw)
+    evaluate_split("validation", validation_dataset, validation_raw)
     if not args.skip_test:
-        write_split_results("test", test_ds, test_raw)
+        evaluate_split("test", test_dataset, test_raw)
 
 
 if __name__ == "__main__":

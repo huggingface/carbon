@@ -14,6 +14,7 @@ GPUS_PER_NODE="${GPUS_PER_NODE:-1}"
 SLURM_NNODES="${SLURM_NNODES:-1}"
 NUM_PROCESSES="${NUM_PROCESSES:-$((SLURM_NNODES * GPUS_PER_NODE))}"
 ACCELERATE_CONFIG="${ACCELERATE_CONFIG:-finetuning/deepstarr/fsdp2_carbon.yaml}"
+ACCELERATE="${ACCELERATE:-.venv/bin/accelerate}"
 MODEL="${MODEL:-HuggingFaceBio/Carbon-3B}"
 RUN_NAME="${RUN_NAME:-carbon-3b-deepstarr-regression-train}"
 OUTPUT_DIR="${OUTPUT_DIR:-scratch/deepstarr/${RUN_NAME}}"
@@ -28,11 +29,26 @@ fi
 if [[ -n "${MAX_STEPS:-}" ]]; then
   EXTRA_ARGS+=(--max_steps "${MAX_STEPS}")
 fi
+if [[ -n "${MAX_TRAIN_SAMPLES:-}" ]]; then
+  EXTRA_ARGS+=(--max_train_samples "${MAX_TRAIN_SAMPLES}")
+fi
+if [[ -n "${MAX_EVAL_SAMPLES:-}" ]]; then
+  EXTRA_ARGS+=(--max_eval_samples "${MAX_EVAL_SAMPLES}")
+fi
 if [[ -n "${RESUME_FROM_CHECKPOINT:-}" ]]; then
   EXTRA_ARGS+=(--resume_from_checkpoint "${RESUME_FROM_CHECKPOINT}")
 fi
+if [[ -n "${LR_SCHEDULER_KWARGS:-}" ]]; then
+  EXTRA_ARGS+=(--lr_scheduler_kwargs "${LR_SCHEDULER_KWARGS}")
+fi
+if [[ "${SKIP_TEST:-false}" == "true" ]]; then
+  EXTRA_ARGS+=(--skip_test)
+fi
+if [[ "${SAVE_MODEL:-false}" == "true" ]]; then
+  EXTRA_ARGS+=(--save_model)
+fi
 
-accelerate launch \
+"${ACCELERATE}" launch \
   --config_file "${ACCELERATE_CONFIG}" \
   --num_processes "${NUM_PROCESSES}" \
   finetuning/deepstarr/deepstarr_train.py \
@@ -43,8 +59,8 @@ accelerate launch \
   --weight_decay "${WEIGHT_DECAY:-0.0}" \
   --warmup_ratio "${WARMUP_RATIO:-0.05}" \
   --lr_scheduler_type "${LR_SCHEDULER_TYPE:-reduce_lr_on_plateau}" \
-  --lr_scheduler_kwargs "${LR_SCHEDULER_KWARGS:-{\"mode\":\"max\",\"factor\":0.5,\"patience\":2,\"threshold\":0.0001}}" \
   --dna_mode "${DNA_MODE:-auto_dna_tags}" \
+  --truncate_to_multiple_of "${TRUNCATE_TO_MULTIPLE_OF:-6}" \
   --max_length "${MAX_LENGTH:-512}" \
   --num_train_epochs "${NUM_TRAIN_EPOCHS:-2.5}" \
   --per_device_train_batch_size "${PER_DEVICE_TRAIN_BATCH_SIZE:-32}" \
