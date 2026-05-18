@@ -31,7 +31,6 @@ evo2-40b/           → evo2_40b
 | `vep_traitgym.sbatch` | TraitGym Mendelian (with `--rev_comp_avg`) |
 | `clinvar.sbatch` | ClinVar coding + non_coding (default 24 kb, `CONTEXT_LENGTH=48000` for 48 kb) |
 | `perturbation_tasks.sbatch` | Sequence-level perturbation tasks: motif, synonymous-codon, and promoter reverse-complement |
-| `perturbation_tasks_token.sbatch` | Token-level variant of the sequence-level perturbation tasks |
 | `genome_niah.sbatch` | Long-context retrieval. Defaults to `TASK=niah CTX=32768`. Override via env: see script header for a sweep example. |
 
 The Evo2 20B and 40B scripts request 8 GPUs by default. The larger checkpoints
