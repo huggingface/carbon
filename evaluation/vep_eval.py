@@ -178,6 +178,9 @@ def score_hf(df: pd.DataFrame, args) -> tuple[np.ndarray, np.ndarray]:
     for i, row in df.iterrows():
         items.append({"uid": f"{i}_ref", "seq": row["ref_seq"]})
         items.append({"uid": f"{i}_var", "seq": row["var_seq"]})
+        if args.rev_comp_avg:
+            items.append({"uid": f"{i}_ref_rc", "seq": _revcomp(row["ref_seq"])})
+            items.append({"uid": f"{i}_var_rc", "seq": _revcomp(row["var_seq"])})
 
     # Dedup identical sequences (many variants share the same ref window)
     seen, uniq = {}, []
@@ -209,6 +212,12 @@ def score_hf(df: pd.DataFrame, args) -> tuple[np.ndarray, np.ndarray]:
 
     ref = np.array([seq_to_logp[r["ref_seq"]] for _, r in df.iterrows()])
     var = np.array([seq_to_logp[r["var_seq"]] for _, r in df.iterrows()])
+
+    if args.rev_comp_avg:
+        ref_rc = np.array([seq_to_logp[_revcomp(r["ref_seq"])] for _, r in df.iterrows()])
+        var_rc = np.array([seq_to_logp[_revcomp(r["var_seq"])] for _, r in df.iterrows()])
+        return ref, var, ref_rc, var_rc
+
     return ref, var
 
 
@@ -234,6 +243,16 @@ def score_evo2(df: pd.DataFrame, args) -> tuple[np.ndarray, np.ndarray]:
     ref_scores = np.array(model.score_sequences(ref_seqs))
     print(f"  scoring {len(var_seqs)} variant sequences")
     var_scores = np.array(model.score_sequences(var_seqs))
+
+    if args.rev_comp_avg:
+        ref_seqs_rc = [_revcomp(seq) for seq in ref_seqs]
+        var_seqs_rc = [_revcomp(seq) for seq in var_seqs]
+        print(f"  scoring {len(ref_seqs_rc)} unique reference reverse-complement sequences")
+        ref_scores_rc = np.array(model.score_sequences(ref_seqs_rc))
+        print(f"  scoring {len(var_seqs_rc)} variant reverse-complement sequences")
+        var_scores_rc = np.array(model.score_sequences(var_seqs_rc))
+        return ref_scores[ref_lookup], var_scores, ref_scores_rc[ref_lookup], var_scores_rc
+
     return ref_scores[ref_lookup], var_scores
 
 
@@ -252,19 +271,12 @@ def main():
     score_fn = score_evo2 if args.backend == "evo2" else score_hf
 
     t0 = time.time()
-    ref_logp, var_logp = score_fn(df, args)
-    delta = var_logp - ref_logp
-
     if args.rev_comp_avg:
-        # Strand-symmetric scoring: also score the reverse-complement of each
-        # (ref, var) pair and average the two deltas. Carbon is trained on both
-        # strands so reverse-complement is in-distribution.
-        print("\n--- reverse-complement pass ---")
-        df_rev = df.copy()
-        df_rev["ref_seq"] = df["ref_seq"].apply(_revcomp)
-        df_rev["var_seq"] = df["var_seq"].apply(_revcomp)
-        ref_logp_rev, var_logp_rev = score_fn(df_rev, args)
-        delta = (delta + (var_logp_rev - ref_logp_rev)) / 2
+        ref_logp, var_logp, ref_logp_rc, var_logp_rc = score_fn(df, args)
+        delta = ((var_logp - ref_logp) + (var_logp_rc - ref_logp_rc)) / 2
+    else:
+        ref_logp, var_logp = score_fn(df, args)
+        delta = var_logp - ref_logp
     print(f"Scoring took {time.time() - t0:.1f}s")
 
     df["ref_logp"] = ref_logp
