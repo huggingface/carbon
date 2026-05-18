@@ -19,7 +19,9 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-EVO2_BENCHMARK_SCRIPT = REPO_ROOT / "evaluation" / "scripts" / "benchmark_evo2_serving.py"
+EVO2_BENCHMARK_SCRIPT = (
+    REPO_ROOT / "evaluation" / "scripts" / "benchmark_evo2_serving.py"
+)
 DEFAULT_OUTPUT_ROOT = REPO_ROOT / "scratch" / "serving_benchmarks"
 DEFAULT_CARBON_MODEL = "HuggingFaceBio/Carbon-3B"
 DEFAULT_CARBON_DRAFT_MODEL = "HuggingFaceBio/Carbon-500M"
@@ -63,6 +65,7 @@ class RunSpec:
     model: str
     prompt_file: Path
     run_dir: Path
+    gpu_count: int = 1
     port: int | None = None
     served_model_name: str | None = None
     draft_model: str | None = None
@@ -215,6 +218,13 @@ def evo2_run_name(model_name: str) -> str:
     return sanitize_path_component(normalized_model_name)
 
 
+def evo2_gpu_count(model_name: str) -> int:
+    normalized_model_name = normalize_evo2_model_name(model_name)
+    if normalized_model_name in {"evo2_40b", "evo2_40b_base"}:
+        return 2
+    return 1
+
+
 def model_run_name(model_name: str) -> str:
     return sanitize_path_component(model_name.rsplit("/", 1)[-1].lower())
 
@@ -226,8 +236,12 @@ def load_sequence_recovery_rows(args: argparse.Namespace) -> list[dict]:
     try:
         dataset = load_dataset(repo_id, args.data_config, split=args.split)
     except Exception:
-        parquet_path = f"hf://datasets/{repo_id}/{args.data_config}/{args.split}.parquet"
-        dataset = load_dataset("parquet", data_files={args.split: parquet_path}, split=args.split)
+        parquet_path = (
+            f"hf://datasets/{repo_id}/{args.data_config}/{args.split}.parquet"
+        )
+        dataset = load_dataset(
+            "parquet", data_files={args.split: parquet_path}, split=args.split
+        )
     return list(dataset)
 
 
@@ -617,10 +631,12 @@ def build_run_specs(
         and not args.skip_spec_vocab_check
         and args.carbon_speculative_tokens
     ):
-        spec_preflight_ok, spec_preflight_reason = check_speculative_vocab_compatibility(
-            args.carbon_model,
-            args.carbon_draft_model,
-            run_dir / "speculative_vocab_preflight.json",
+        spec_preflight_ok, spec_preflight_reason = (
+            check_speculative_vocab_compatibility(
+                args.carbon_model,
+                args.carbon_draft_model,
+                run_dir / "speculative_vocab_preflight.json",
+            )
         )
 
     if not args.skip_carbon:
@@ -659,9 +675,7 @@ def build_run_specs(
                         served_model_name=f"{carbon_name}-spec-{token_count}",
                         draft_model=args.carbon_draft_model,
                         num_speculative_tokens=token_count,
-                        speculative_config=carbon_speculative_config(
-                            args, token_count
-                        ),
+                        speculative_config=carbon_speculative_config(args, token_count),
                         server_extra_args=carbon_extra_args,
                         skip_reason=skip_reason,
                         metadata=carbon_metadata,
@@ -678,6 +692,7 @@ def build_run_specs(
                 model=normalized_evo2_model,
                 prompt_file=Path(prompt_files["evo2"]),
                 run_dir=run_dir / evo2_name,
+                gpu_count=evo2_gpu_count(normalized_evo2_model),
                 metadata={
                     "prompt_family": "evo2",
                     "requested_model": args.evo2_model,
@@ -687,14 +702,15 @@ def build_run_specs(
         )
 
     if args.generator != "never":
+        generator_name = model_run_name(args.generator_model)
         specs.append(
             RunSpec(
-                name="generator-v2-eukaryote-3b-vllm",
+                name=f"{generator_name}-vllm",
                 backend="vllm",
                 model=args.generator_model,
                 prompt_file=Path(prompt_files["generator"]),
-                run_dir=run_dir / "generator-v2-eukaryote-3b-vllm",
-                served_model_name="generator-v2-eukaryote-3b-vllm",
+                run_dir=run_dir / f"{generator_name}-vllm",
+                served_model_name=f"{generator_name}-vllm",
                 requires_probe=True,
                 skip_on_probe_failure=args.generator == "auto",
                 metadata={"prompt_family": "generator"},
@@ -998,7 +1014,9 @@ def run_spec(args: argparse.Namespace, spec: RunSpec) -> dict:
     raise ValueError(f"Unsupported backend: {spec.backend}")
 
 
-def run_gpu_queue(args: argparse.Namespace, gpu_id: str, specs: list[RunSpec]) -> list[dict]:
+def run_gpu_queue(
+    args: argparse.Namespace, gpu_id: str, specs: list[RunSpec]
+) -> list[dict]:
     rows = []
     for spec in specs:
         spec.gpu_id = gpu_id
@@ -1059,12 +1077,59 @@ def assign_specs_to_gpus(
     gpu_ids: list[str],
     max_parallel: int,
 ) -> dict[str, list[RunSpec]]:
-    active_gpus = gpu_ids[: min(max_parallel, len(gpu_ids), len(specs))]
-    assignments = {gpu_id: [] for gpu_id in active_gpus}
-    for index, spec in enumerate(specs):
-        gpu_id = active_gpus[index % len(active_gpus)]
+    active_gpus = gpu_ids[: min(max_parallel, len(gpu_ids))]
+    if not active_gpus:
+        return {}
+    for spec in specs:
+        if spec.gpu_count <= 0:
+            raise ValueError(f"{spec.name} has invalid gpu_count={spec.gpu_count}")
+        if spec.gpu_count > len(active_gpus):
+            raise RuntimeError(
+                f"{spec.name} requires {spec.gpu_count} GPUs, but only "
+                f"{len(active_gpus)} are available after --max-parallel."
+            )
+
+    single_gpu_specs = [spec for spec in specs if spec.gpu_count == 1]
+    remaining_gpus = list(active_gpus)
+    multi_gpu_groups: dict[int, list[tuple[str, ...]]] = {}
+
+    for gpu_count in sorted(
+        {spec.gpu_count for spec in specs if spec.gpu_count > 1},
+        reverse=True,
+    ):
+        specs_for_count = [spec for spec in specs if spec.gpu_count == gpu_count]
+        max_groups = len(remaining_gpus) // gpu_count
+        if single_gpu_specs:
+            max_groups = min(max_groups, max(1, (len(remaining_gpus) - 1) // gpu_count))
+        group_count = min(len(specs_for_count), max_groups)
+        if group_count <= 0:
+            raise RuntimeError(
+                f"No free GPU group is available for {gpu_count}-GPU benchmark specs."
+            )
+        groups = []
+        for _ in range(group_count):
+            group = tuple(remaining_gpus[:gpu_count])
+            del remaining_gpus[:gpu_count]
+            groups.append(group)
+        multi_gpu_groups[gpu_count] = groups
+
+    single_gpu_groups = [(gpu_id,) for gpu_id in remaining_gpus]
+    if single_gpu_specs and not single_gpu_groups:
+        raise RuntimeError("No free GPU is available for one-GPU benchmark specs.")
+
+    assignments: dict[str, list[RunSpec]] = {}
+    group_offsets: dict[int, int] = {}
+    for spec in specs:
+        if spec.gpu_count == 1:
+            groups = single_gpu_groups
+        else:
+            groups = multi_gpu_groups[spec.gpu_count]
+        offset = group_offsets.get(spec.gpu_count, 0)
+        group = groups[offset % len(groups)]
+        group_offsets[spec.gpu_count] = offset + 1
+        gpu_id = ",".join(group)
         spec.gpu_id = gpu_id
-        assignments[gpu_id].append(spec)
+        assignments.setdefault(gpu_id, []).append(spec)
     return assignments
 
 
