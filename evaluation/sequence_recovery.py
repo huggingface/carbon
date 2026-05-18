@@ -61,6 +61,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--add_dna_tag", action="store_true", help="Prepend <dna> (Carbon hybrid)")
     p.add_argument("--add_bos", action="store_true", help="Prepend <s> (GENERator pure-DNA)")
     p.add_argument("--max_samples", type=int, default=None, help="For quick testing")
+    p.add_argument("--shard_idx", type=int, default=0, help="0-based row shard index")
+    p.add_argument("--n_shards", type=int, default=1, help="Total number of row shards")
     return p.parse_args()
 
 
@@ -197,6 +199,10 @@ def run_evo2(df: pd.DataFrame, args):
 def main():
     args = parse_args()
     assert not (args.add_dna_tag and args.add_bos), "--add_dna_tag and --add_bos are mutually exclusive"
+    if args.n_shards < 1:
+        raise ValueError("--n_shards must be >= 1")
+    if not 0 <= args.shard_idx < args.n_shards:
+        raise ValueError("--shard_idx must satisfy 0 <= shard_idx < n_shards")
     dtype_str = "bfloat16" if args.bf16 else "float32"
 
     print("=" * 70)
@@ -210,6 +216,17 @@ def main():
         lambda row: hashlib.md5(f"{row['sequence']}_{row.name}".encode()).hexdigest()[:16],
         axis=1,
     )
+    if args.n_shards > 1:
+        total_before_shard = len(df)
+        df = df.iloc[args.shard_idx :: args.n_shards].reset_index(drop=True)
+        if len(df) == 0:
+            raise ValueError(
+                f"Shard {args.shard_idx}/{args.n_shards} has no rows from {total_before_shard} sequences"
+            )
+        print(
+            f"Shard {args.shard_idx}/{args.n_shards}: selected {len(df)} "
+            f"of {total_before_shard} sequences"
+        )
     print(f"Loaded {len(df)} sequences ({df['type'].value_counts().to_dict() if 'type' in df else 'n/a'})")
 
     t0 = time.time()
@@ -235,7 +252,8 @@ def main():
 
     os.makedirs(args.output_dir, exist_ok=True)
     model_tag = args.model.split("/")[-1]
-    base = f"{model_tag}_{args.data_type}_{dtype_str}"
+    shard_tag = f"_shard{args.shard_idx}of{args.n_shards}" if args.n_shards > 1 else ""
+    base = f"{model_tag}_{args.data_type}_{dtype_str}{shard_tag}"
     parquet = os.path.join(args.output_dir, f"{base}.parquet")
     summary = os.path.join(args.output_dir, f"{base}.json")
     cols = [c for c in ["hash", "type", "label", "pred", "accuracy"] if c in out.columns]
@@ -251,6 +269,8 @@ def main():
                 "overall_accuracy": float(overall),
                 "type_accuracy": {k: float(v) for k, v in (by_type.items() if by_type is not None else [])},
                 "dtype": dtype_str,
+                "shard_idx": int(args.shard_idx),
+                "n_shards": int(args.n_shards),
             },
             f,
             indent=2,

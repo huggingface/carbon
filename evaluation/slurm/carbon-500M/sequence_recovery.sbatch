@@ -13,6 +13,8 @@ set -euo pipefail
 UV_RUN=(uv run --no-sync --group evaluation)
 RUN_SHA=${RUN_SHA:-$(git rev-parse --short=12 HEAD)}
 OUT_ROOT=${OUT_ROOT:-results/$RUN_SHA}
+SHARD=${SHARD:-0}
+NSHARDS=${NSHARDS:-1}
 
 OUT="$OUT_ROOT/sequence_recovery"
 MODEL=HuggingFaceBio/Carbon-500M
@@ -23,4 +25,5 @@ mkdir -p "$OUT"
     --model "$MODEL" \
     --data_type eukaryote \
     --add_dna_tag --bf16 \
-    --output_dir "$OUT"
+    --output_dir "$OUT" \
+    --shard_idx "$SHARD" --n_shards "$NSHARDS"
