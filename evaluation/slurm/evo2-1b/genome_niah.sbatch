@@ -39,7 +39,7 @@ OUT="$OUT_ROOT/genome_niah"
 MODEL=${MODEL:-arcinstitute/evo2_1b_base}
 TASK=${TASK:-niah}
 CTX=${CTX:-32768}
-SHARD=${SHARD:-0}
+SHARD=${SHARD:-${SLURM_ARRAY_TASK_ID:-0}}
 NSHARDS=${NSHARDS:-1}
 PREFILL=${PREFILL:-4096}
 
