@@ -1,7 +1,7 @@
 # Carbon evaluation
 
 Six **zero-shot** DNA evals: sequence recovery, BRCA2, TraitGym Mendelian,
-ClinVar, TATA perturbation, synonymous codon substitution, and Genome-NIAH
+ClinVar, nucleotide triplet-expansion, synonymous codon substitution, and Genome-NIAH
 long-context retrieval. Every eval supports three model families through
 one flag, so the same script runs on Carbon, GENERator, or Evo2.
 
@@ -10,7 +10,7 @@ one flag, so the same script runs on Carbon, GENERator, or Evo2.
 1. [Sequence recovery](#1-sequence-recovery) — next-30-bp generation, exact-base accuracy
 2. [BRCA2, TraitGym Mendelian VEP](#2-brca2-traitgym-mendelian-vep) — centered 8 kb window, full-LL delta
 3. [ClinVar VEP](#3-clinvar-vep) — right-end / next-token scoring (GENERator recipe)
-4. [Sequence-level perturbation tasks](#4-sequence-level-perturbation-tasks) — TATA + synonymous codons, new tasks we built
+4. [Sequence-level perturbation tasks](#4-sequence-level-perturbation-tasks) — nucleotide triplet-expansion + synonymous codon substitution, new tasks we built
 5. [Genome-NIAH long-context retrieval](#5-genome-niah-long-context-retrieval) — long-context needle-in-a-haystack for DNA (4 tasks × 6 context lengths up to 786 kbp)
 
 ## Scripts
@@ -20,7 +20,7 @@ one flag, so the same script runs on Carbon, GENERator, or Evo2.
 | [`sequence_recovery.py`](sequence_recovery.py) | Generate the next 30 bp of a DNA context and compare to the held-out continuation | Per-base accuracy |
 | [`vep_eval.py`](vep_eval.py) | BRCA2 / TraitGym VEP — **centered 8 kb window**, full-LL delta scoring | AUROC, AUPRC, Spearman ρ |
 | [`clinvar_vep_eval.py`](clinvar_vep_eval.py) | ClinVar VEP — **right-end / next-token** scoring | AUROC, AUPRC |
-| [`perturbation_tasks.py`](perturbation_tasks.py) | TATA perturbation and synonymous-codon substitution (one script, `--task`) | Pairwise discrimination accuracy `mean(LL(real) > LL(perturbed))` |
+| [`perturbation_tasks.py`](perturbation_tasks.py) | nucleotide triplet-expansion and synonymous codon substitution (one script, `--task`) | Pairwise discrimination accuracy `mean(LL(real) > LL(perturbed))` |
 | [`genome_niah_eval.py`](genome_niah_eval.py) | Long-context retrieval: insert (key, value) in a real-genome haystack, greedy-decode the value | `gen_exact_match`, `gen_base_accuracy`, `ll_correct` |
 
 > Note: prep scripts for rebuilding the BRCA2 / TraitGym parquets from
@@ -215,38 +215,39 @@ uv run --group evaluation python evaluation/clinvar_vep_eval.py \
 
 ## 4. Sequence-level perturbation tasks
 
-TATA perturbation and synonymous codon substitution — **new tasks we built
+nucleotide triplet-expansion and synonymous codon substitution — **new tasks we built
 for Carbon**, not ported from prior work. Each applies a structural
-perturbation to a real biological sequence (motif disruption or codon swap)
-and asks whether the model assigns higher log-likelihood to the unperturbed
+perturbation to a real biological sequence and asks whether the model assigns higher log-likelihood to the unperturbed
 version. Distinct from VEP, which probes single-nucleotide changes.
 
-- **TATA perturbation** — disrupt the TATA-box motif inside a promoter with
-  random substitutions. A model that has internalized eukaryotic promoter
-  architecture should prefer the intact promoter.
-- **Synonymous codon substitution** — replace codons in a CDS with synonyms
-  encoding the same amino acid. A model that has learned codon-usage bias
-  should prefer the native codon usage over the synonymous variant.
+- **nucleotide triplet-expansion** — A 30 bp codon-aligned region beginning 60 bp downstream of the first complete codon of the CDS exon is replaced with 10 consecutive CAG triplets (CAGCAGCAGCAGCAGCAGCAGCAGCAGCAG), mimicking the pathological trinucleotide repeat expansions underlying polyglutamine disorders (Huntington's disease, SCAs, DRPLA).
+- **Synonymous codon substitution** — Codons within a real CDS are replaced with the highest-frequency synonym for the target species, while the upstream and downstream flanking sequence is left unchanged. Amino acid identity is preserved by construction. The model should prefer the natural codon usage over the artificially optimised variant.
 
 Dataset: [`HuggingFaceBio/carbon_tasks`](https://huggingface.co/datasets/HuggingFaceBio/carbon_tasks)
 (columns `original_sequence` = real, `sequence` = perturbed)
 
 ```bash
-# Carbon 3B hybrid · TATA
+# Carbon 3B hybrid · triplet-expansion
 uv run --group evaluation python evaluation/perturbation_tasks.py \
-    --task tata_perturbation \
+    --task motif_human \
     --model HuggingFaceBio/Carbon-3B \
     --bf16
 
-# Carbon 3B hybrid · synonymous codons
+# Carbon 3B hybrid · human synonymous codons
 uv run --group evaluation python evaluation/perturbation_tasks.py \
-    --task synonymous_codon_substitution \
+    --task syn_human \
+    --model HuggingFaceBio/Carbon-3B \
+    --bf16
+
+# Carbon 3B hybrid · mouse synonymous codons
+uv run --group evaluation python evaluation/perturbation_tasks.py \
+    --task syn_mouse \
     --model HuggingFaceBio/Carbon-3B \
     --bf16
 
 # Evo2 7B
 uv run --group evaluation python evaluation/perturbation_tasks.py \
-    --task tata_perturbation \
+    --task motif_human \
     --model evo2_7b --backend evo2 --bf16
 ```
 
