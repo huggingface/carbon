@@ -15,10 +15,6 @@ Available tasks:
     Replace codons in a CDS with synonyms encoding the same amino acid. The
     real codon usage should be preferred over the synonymous variant.
 
-  promoter_revcomp:
-    Replace promoter sequences with their reverse-complement as a perturbation.
-    The model should score the original strand higher than the reverse-complement.
-
 Dataset: HuggingFaceBio/carbon-perturbation-bench
 Columns: original_sequence (real), sequence (perturbed)
 Metric: pairwise discrimination accuracy = mean(LL(real) > LL(perturbed))
