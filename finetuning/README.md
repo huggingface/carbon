@@ -5,6 +5,7 @@ This directory contains task-specific fine-tuning recipes for Carbon models.
 | Recipe | Task | Metric |
 |---|---|---|
 | [`deepstarr/`](deepstarr/) | DeepSTARR enhancer activity regression | PCC / log PCC |
+| [`promoter_activity/`](promoter_activity/) | Random Promoter DREAM activity regression | PCC / Spearman |
 | [`finetune_promoter.py`](finetune_promoter.py) | GUE promoter detection | accuracy, F1, MCC, AUROC |
 
 ## DeepSTARR
@@ -23,6 +24,25 @@ accelerate launch \
 ```
 
 See [`deepstarr/README.md`](deepstarr/README.md) for the full launch notes.
+
+## Random Promoter DREAM Activity
+
+The promoter activity recipe fine-tunes `HuggingFaceBio/Carbon-500M-remote` on
+`HuggingFaceBio/random-promoter-dream-2022` with the validated 200k-example
+Pearson-Huber setup. The loss gathers predictions and labels across ranks for
+multi-device launches, so Pearson correlation is computed on the global
+microbatch rather than independently on each rank.
+
+```sh
+accelerate launch \
+  --config_file finetuning/deepstarr/fsdp2_carbon.yaml \
+  --num_processes 1 \
+  finetuning/promoter_activity/promoter_activity_train.py \
+  --output_dir scratch/promoter_activity/carbon-500m-pearson-huber-200k
+```
+
+See [`promoter_activity/README.md`](promoter_activity/) for the full launch
+notes.
 
 ## Promoter Detection
 
