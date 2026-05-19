@@ -6,6 +6,7 @@ This directory contains task-specific fine-tuning recipes for Carbon models.
 |---|---|---|
 | [`deepstarr/`](deepstarr/) | DeepSTARR enhancer activity regression | PCC / log PCC |
 | [`promoter_activity/`](promoter_activity/) | Random Promoter DREAM activity regression | PCC / Spearman |
+| [`malinois/`](malinois/) | Malinois MPRA activity regression | PCC / Spearman |
 | [`finetune_promoter.py`](finetune_promoter.py) | GUE promoter detection | accuracy, F1, MCC, AUROC |
 
 ## DeepSTARR
@@ -43,6 +44,27 @@ accelerate launch \
 
 See [`promoter_activity/README.md`](promoter_activity/) for the full launch
 notes.
+
+## Malinois MPRA
+
+The Malinois recipe fine-tunes Carbon on the Gosai et al. MPRA regression table
+for three cell-type activity targets: K562, HepG2, and SK-N-SH. It uses the
+benchmark chromosome holdout split and an MSE-only full fine-tuning recipe.
+
+```sh
+accelerate launch \
+  --config_file finetuning/deepstarr/fsdp2_carbon.yaml \
+  --num_processes 1 \
+  finetuning/malinois/malinois_train.py \
+  --model HuggingFaceBio/Carbon-3B \
+  --output_dir scratch/malinois/carbon-3b-mse-smoke \
+  --max_train_samples 512 \
+  --max_eval_samples 128 \
+  --max_steps 10 \
+  --skip_test
+```
+
+See [`malinois/README.md`](malinois/README.md) for the full launch notes.
 
 ## Promoter Detection
 
