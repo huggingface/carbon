@@ -24,6 +24,9 @@ hf auth whoami
 The Slurm wrappers default to `.venv/bin/accelerate`, so run them from a synced
 checkout or override `ACCELERATE`. If launching multiple Accelerate jobs on the
 same node, set distinct `MAIN_PROCESS_PORT` values for each job.
+The included Slurm wrapper is a single-node template; multi-node runs require
+an Accelerate config and launch arguments that set the machine rank and main
+process address.
 
 ## Smoke Run
 
@@ -43,6 +46,7 @@ accelerate launch \
   --eval_steps 5 \
   --per_device_train_batch_size 1 \
   --per_device_eval_batch_size 2 \
+  --attn_implementation sdpa \
   --skip_test
 ```
 
@@ -54,8 +58,9 @@ and AdamW with beta2 `0.95`.
 
 FlashAttention 3 is selected with
 `--attn_implementation kernels-community/flash-attn3` and requires compatible
-GPU, CUDA, and Transformers versions. For a more portable smoke run, use
-`--attn_implementation sdpa`; for Slurm, set `ATTN_IMPLEMENTATION=sdpa`.
+GPU, CUDA, and Transformers versions. The smoke command above uses SDPA for
+portability; omit that override to validate the default FA3 path. For Slurm,
+set `ATTN_IMPLEMENTATION=sdpa` for a portable smoke run.
 
 ```sh
 accelerate launch \

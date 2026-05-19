@@ -11,11 +11,20 @@ source ~/.bashrc
 set -euo pipefail
 
 GPUS_PER_NODE="${GPUS_PER_NODE:-1}"
-SLURM_NNODES="${SLURM_NNODES:-1}"
-NUM_PROCESSES="${NUM_PROCESSES:-$((SLURM_NNODES * GPUS_PER_NODE))}"
+if [[ "${SLURM_NNODES:-1}" != "1" ]]; then
+  echo "This wrapper is configured for single-node Accelerate launches; set up multi-node Accelerate explicitly." >&2
+  exit 1
+fi
+NUM_PROCESSES="${NUM_PROCESSES:-${GPUS_PER_NODE}}"
 ACCELERATE_CONFIG="${ACCELERATE_CONFIG:-finetuning/deepstarr/fsdp2_carbon.yaml}"
 ACCELERATE="${ACCELERATE:-.venv/bin/accelerate}"
-MAIN_PROCESS_PORT="${MAIN_PROCESS_PORT:-29500}"
+if [[ -z "${MAIN_PROCESS_PORT:-}" ]]; then
+  if [[ -n "${SLURM_JOB_ID:-}" ]]; then
+    MAIN_PROCESS_PORT="$((29500 + SLURM_JOB_ID % 1000))"
+  else
+    MAIN_PROCESS_PORT="29500"
+  fi
+fi
 MODEL="${MODEL:-HuggingFaceBio/Carbon-3B}"
 RUN_NAME="${RUN_NAME:-carbon-3b-deepstarr-regression-train}"
 OUTPUT_DIR="${OUTPUT_DIR:-scratch/deepstarr/${RUN_NAME}}"

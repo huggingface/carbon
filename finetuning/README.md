@@ -9,6 +9,20 @@ This directory contains task-specific fine-tuning recipes for Carbon models.
 | [`malinois/`](malinois/) | Malinois MPRA activity regression | PCC / Spearman |
 | [`finetune_promoter.py`](finetune_promoter.py) | GUE promoter detection | accuracy, F1, MCC, AUROC |
 
+## Environment
+
+Use the repository environment before running the recipe scripts:
+
+```sh
+uv sync --frozen
+source .venv/bin/activate
+hf auth whoami
+```
+
+The Slurm wrappers in this directory are single-node launch templates. For
+multi-node training, use a matching Accelerate config and pass the appropriate
+machine-rank/main-process settings explicitly.
+
 ## DeepSTARR
 
 The DeepSTARR recipe includes a minimal regression training script, FSDP2
@@ -62,6 +76,8 @@ accelerate launch \
   --max_eval_samples 128 \
   --max_steps 10 \
   --eval_steps 5 \
+  --per_device_train_batch_size 1 \
+  --per_device_eval_batch_size 2 \
   --skip_test
 ```
 
@@ -125,5 +141,6 @@ loader that yields `(sequence, label)` and keep
 ### Dependencies
 
 ```sh
-pip install transformers datasets torch scikit-learn
+uv sync --frozen
+source .venv/bin/activate
 ```

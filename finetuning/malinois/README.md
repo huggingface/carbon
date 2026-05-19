@@ -15,17 +15,30 @@ validation on chromosomes 19, 21, and X, and test on chromosomes 7 and 13.
 The defaults keep the settings that worked in our runs: full fine-tuning, MSE
 on train-z-scored log2FC labels, `auto_dna_tags=True`, reverse-complement train
 duplication, high-activity row duplication, reverse-complement averaged final
-metrics, no weight decay, global batch size 256 on 8 GPUs, and `lr=1e-5`.
+metrics, no weight decay, global batch size 256 on 8 GPUs, bfloat16 model
+loading/compute, and `lr=1e-5`.
 The default attention backend is
 `kernels-community/flash-attn3`, which requires compatible GPU, CUDA, and
 Transformers versions. For a more portable smoke run, use
 `--attn_implementation sdpa`; for Slurm, set `ATTN_IMPLEMENTATION=sdpa`.
 The source MPRA table is large, so the loader uses a longer download timeout;
-for Slurm, override it with `DOWNLOAD_TIMEOUT` if needed.
+for Slurm, override it with `DOWNLOAD_TIMEOUT` if needed. The retry option is
+passed through to `datasets` where supported.
 
 The script intentionally omits the exploratory loss variants, plotting code,
 local data downloads, and report-generation utilities from the experiment
 workspace.
+
+## Environment
+
+```sh
+uv sync --frozen
+source .venv/bin/activate
+hf auth whoami
+```
+
+The Slurm wrapper is a single-node template. If launching multiple Accelerate
+jobs on the same node, set distinct `MAIN_PROCESS_PORT` values.
 
 ## Smoke Run
 
@@ -42,6 +55,7 @@ accelerate launch \
   --eval_steps 5 \
   --per_device_train_batch_size 1 \
   --per_device_eval_batch_size 2 \
+  --attn_implementation sdpa \
   --skip_test
 ```
 

@@ -18,6 +18,14 @@ The Pearson-Huber loss gathers predictions and labels across distributed ranks
 before computing Pearson correlation, so multi-device runs optimize the global
 microbatch correlation instead of a per-rank local correlation.
 
+## Environment
+
+```sh
+uv sync --frozen
+source .venv/bin/activate
+hf auth whoami
+```
+
 ## Smoke Run
 
 ```sh
@@ -71,6 +79,9 @@ GPUS_PER_NODE=8 \
 NUM_PROCESSES=8 \
 sbatch --gres=gpu:8 finetuning/promoter_activity/promoter_activity_regression.slurm
 ```
+
+The Slurm wrapper is a single-node template. If launching multiple Accelerate
+jobs on the same node, set distinct `MAIN_PROCESS_PORT` values.
 
 Common overrides:
 

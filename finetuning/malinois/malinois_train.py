@@ -51,7 +51,7 @@ def parse_args() -> argparse.Namespace:
         "--download_max_retries",
         type=int,
         default=3,
-        help="Retry count for downloading the Malinois source table.",
+        help="Retry count passed to datasets DownloadConfig where supported.",
     )
     parser.add_argument("--output_dir", default="scratch/malinois/carbon-3b-mse")
     parser.add_argument("--run_name", default=None)
@@ -108,7 +108,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--torch_dtype",
         choices=["auto", "float32", "bfloat16", "float16"],
-        default="float32",
+        default="bfloat16",
     )
     parser.add_argument("--bf16", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--fp16", action="store_true")
@@ -515,10 +515,12 @@ def main() -> None:
         filter_metric_rows(split_raw["validation"], args.metric_se_threshold),
         args.max_eval_samples,
     )
-    test_raw = select_limit(
-        filter_metric_rows(split_raw["test"], args.metric_se_threshold),
-        args.max_eval_samples,
-    )
+    test_raw = None
+    if not args.skip_test:
+        test_raw = select_limit(
+            filter_metric_rows(split_raw["test"], args.metric_se_threshold),
+            args.max_eval_samples,
+        )
 
     label_transform = fit_label_transform(train_raw)
     unaugmented_train_size = len(train_raw)
@@ -573,7 +575,6 @@ def main() -> None:
     with state.main_process_first():
         train_dataset = train_raw.map(tokenize, **map_kwargs)
         validation_dataset = validation_raw.map(tokenize, **map_kwargs)
-        test_dataset = test_raw.map(tokenize, **map_kwargs)
         validation_rc_dataset = (
             validation_raw.map(
                 lambda batch: tokenize(batch, rc=True),
@@ -582,14 +583,18 @@ def main() -> None:
             if args.rc_eval_average
             else None
         )
-        test_rc_dataset = (
-            test_raw.map(
-                lambda batch: tokenize(batch, rc=True),
-                **{**map_kwargs, "desc": "Tokenizing Malinois test RC"},
+        test_dataset = None
+        test_rc_dataset = None
+        if test_raw is not None:
+            test_dataset = test_raw.map(tokenize, **map_kwargs)
+            test_rc_dataset = (
+                test_raw.map(
+                    lambda batch: tokenize(batch, rc=True),
+                    **{**map_kwargs, "desc": "Tokenizing Malinois test RC"},
+                )
+                if args.rc_eval_average
+                else None
             )
-            if args.rc_eval_average
-            else None
-        )
 
     logger.info("Loading model from %s", args.model)
     model_kwargs: dict[str, Any] = {
@@ -639,7 +644,7 @@ def main() -> None:
         "unaugmented_train_size": unaugmented_train_size,
         "augmented_train_size": augmented_train_size,
         "validation_size_metric_filtered": len(validation_raw),
-        "test_size_metric_filtered": len(test_raw),
+        "test_size_metric_filtered": len(test_raw) if test_raw is not None else None,
         "effective_eval_steps": eval_steps,
         "global_train_batch_size": global_batch_size,
         "steps_per_epoch": steps_per_epoch,
@@ -734,6 +739,8 @@ def main() -> None:
         "validation", validation_dataset, validation_rc_dataset, validation_raw
     )
     if not args.skip_test:
+        assert test_raw is not None
+        assert test_dataset is not None
         evaluate_split("test", test_dataset, test_rc_dataset, test_raw)
 
 
