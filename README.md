@@ -5,12 +5,14 @@ language models trained on **1T tokens of DNA / 6T DNA base pairs** from the
 [Carbon Pretraining Corpus](https://huggingface.co/datasets/HuggingFaceBio/carbon-pretraining-corpus),
 a curated mix of DNA & RNA sequences.
 
-This repo contains the eval code for Carbon tasks: sequence recovery, variant
-effect prediction, TATA promoter perturbation, and synonymous codon
-substitution. We put this together because the zero-shot DNA eval landscape is
+This repo contains:
+
+* the eval code for Carbon tasks: sequence recovery, variant
+effect prediction, and perturbations. We put this together because the zero-shot DNA eval landscape is
 currently scattered — useful tasks live in different repos, often buried
 alongside evals that need finetuning or that are already saturated, which
 makes reproducibility harder.
+* scripts for fine-tuning the Carbon models on downstream tasks.
 
 ## Contents
 
@@ -34,8 +36,6 @@ for DNA, switched by a `<dna>` tag mid-sequence. That's why every inference
 or eval snippet below wraps DNA inputs with `<dna>` — see
 [evaluation/README.md](evaluation/README.md) for the full DNA-tag explanation.
 
-TODO: add this behavior in tokenizer by default?
-
 ## Installation
 
 Install the core runtime dependencies with:
@@ -54,17 +54,6 @@ For Evo2-backed evaluation, install the evaluation and Evo2 dependency groups:
 
 ```bash
 uv sync --group evaluation --group evo2
-```
-
-The Evo2 group pins the PyPI CUDA 12 Transformer Engine package
-(`transformer-engine[core-cu12,pytorch]==2.13.0`) and builds
-`flash-attn==2.8.0.post2` without build isolation for Evo2's `vortex`
-dependency. To check which attention backend and FlashAttention version
-Transformer Engine uses at runtime, enable debug logging when running an Evo2
-eval:
-
-```bash
-NVTE_DEBUG=1 NVTE_DEBUG_LEVEL=1 uv run --group evo2 --group evaluation ...
 ```
 
 ## Inference
@@ -126,7 +115,7 @@ The suite covers four modes of zero-shot evaluation:
   both coding (BRCA2) and non-coding regulatory variants (TraitGym
   Mendelian), plus ClinVar for broad pathogenic-vs-benign coverage.
 - **A generative task** — sequence recovery, ported from the GENERator paper.
-- **Two perturbation tasks** we built — TATA-box perturbation and
+- **Two perturbation tasks** we built — CAG repeat insertion and
   synonymous-codon substitution — to probe regulatory-motif awareness and
   codon-usage structure.
 - **Long-context retrieval**  we built — Genome-NIAH, a needle-in-a-haystack eval
@@ -165,16 +154,9 @@ training on next-token loss. The ~10 % prokaryote slice in the pretraining
 data means the model already has a reasonable starting point even for
 bacterial sequences.
 
-## Citation
+## Acknowledgements
 
-```bibtex
-@misc{carbon2026,
-  title  = {Carbon: Genomic foundation models},
-  author = {Hugging Face},
-  year   = {2026},
-  url    = {https://huggingface.co/HuggingFaceBio}
-}
-```
+Carbon is a joint collaboration between the research teams at Hugging Face, Zhongguancun Academy, and TIGEM/University of Naples “Federico II”.
 
 ## License
 
