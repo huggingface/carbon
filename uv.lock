@@ -240,7 +240,7 @@ evo2 = [
 requires-dist = [
     { name = "accelerate", specifier = ">=1.13.0" },
     { name = "datasets", specifier = ">=4.8.5" },
-    { name = "kernels", specifier = ">=0.14.1,<0.15" },
+    { name = "kernels", specifier = ">=0.14.1" },
     { name = "scikit-learn", specifier = ">=1.8.0" },
     { name = "vllm", specifier = "==0.19.1" },
 ]

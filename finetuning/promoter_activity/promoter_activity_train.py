@@ -26,6 +26,7 @@ from transformers import set_seed
 
 DATASET_NAME = "HuggingFaceBio/random-promoter-dream-2022"
 DATASET_CONFIG = "supervised"
+DATASET_REVISION = "5b18e5067fd20e589f698a4406ca6e4f2344d68f"
 MODEL_NAME = "HuggingFaceBio/Carbon-500M-remote"
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--revision", default=None)
     parser.add_argument("--dataset_name", default=DATASET_NAME)
     parser.add_argument("--dataset_config", default=DATASET_CONFIG)
+    parser.add_argument(
+        "--dataset_revision",
+        default=DATASET_REVISION,
+        help="Dataset revision containing the supervised train/validation/test config.",
+    )
     parser.add_argument(
         "--output_dir",
         default="scratch/promoter_activity/carbon-500m-pearson-huber-200k",
@@ -403,8 +409,17 @@ def main() -> None:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    logger.info("Loading dataset %s / %s", args.dataset_name, args.dataset_config)
-    raw_dataset = load_dataset(args.dataset_name, args.dataset_config)
+    logger.info(
+        "Loading dataset %s / %s at revision %s",
+        args.dataset_name,
+        args.dataset_config,
+        args.dataset_revision,
+    )
+    raw_dataset = load_dataset(
+        args.dataset_name,
+        args.dataset_config,
+        revision=args.dataset_revision,
+    )
     train_raw = select_limit(raw_dataset["train"], args.max_train_samples)
     validation_raw = select_limit(raw_dataset["validation"], args.max_eval_samples)
     test_raw = (

@@ -15,6 +15,7 @@ SLURM_NNODES="${SLURM_NNODES:-1}"
 NUM_PROCESSES="${NUM_PROCESSES:-$((SLURM_NNODES * GPUS_PER_NODE))}"
 ACCELERATE_CONFIG="${ACCELERATE_CONFIG:-finetuning/deepstarr/fsdp2_carbon.yaml}"
 ACCELERATE="${ACCELERATE:-.venv/bin/accelerate}"
+MAIN_PROCESS_PORT="${MAIN_PROCESS_PORT:-29500}"
 MODEL="${MODEL:-HuggingFaceBio/Carbon-3B}"
 RUN_NAME="${RUN_NAME:-carbon-3b-deepstarr-regression-train}"
 OUTPUT_DIR="${OUTPUT_DIR:-scratch/deepstarr/${RUN_NAME}}"
@@ -51,6 +52,7 @@ fi
 "${ACCELERATE}" launch \
   --config_file "${ACCELERATE_CONFIG}" \
   --num_processes "${NUM_PROCESSES}" \
+  --main_process_port "${MAIN_PROCESS_PORT}" \
   finetuning/deepstarr/deepstarr_train.py \
   --model "${MODEL}" \
   --output_dir "${OUTPUT_DIR}" \

@@ -3,7 +3,8 @@
 This recipe fine-tunes Carbon-500M on the Random Promoter DREAM Challenge 2022
 sequence-to-expression task using the validated 200k-example setup:
 
-- dataset: `HuggingFaceBio/random-promoter-dream-2022`, config `supervised`
+- dataset: `HuggingFaceBio/random-promoter-dream-2022`, config `supervised`,
+  revision `5b18e5067fd20e589f698a4406ca6e4f2344d68f`
 - model: `HuggingFaceBio/Carbon-500M-remote`
 - objective: `1 - Pearson r + 0.2 * Huber`
 - tokenizer mode: `auto_dna_tags`
@@ -74,11 +75,16 @@ sbatch --gres=gpu:8 finetuning/promoter_activity/promoter_activity_regression.sl
 Common overrides:
 
 ```sh
+RUN_NAME=carbon-500m-promoter-smoke \
+MAIN_PROCESS_PORT=29600 \
 MAX_TRAIN_SAMPLES=10000 \
 MAX_EVAL_SAMPLES=2000 \
 MAX_STEPS=100 \
 sbatch finetuning/promoter_activity/promoter_activity_regression.slurm
 ```
+
+The recipe pins the dataset revision because the supervised
+train/validation/test config is not exposed by the current Hub `main` revision.
 
 ## Outputs
 

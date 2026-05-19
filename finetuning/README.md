@@ -61,6 +61,7 @@ accelerate launch \
   --max_train_samples 512 \
   --max_eval_samples 128 \
   --max_steps 10 \
+  --eval_steps 5 \
   --skip_test
 ```
 

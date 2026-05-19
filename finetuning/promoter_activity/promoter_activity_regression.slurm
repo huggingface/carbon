@@ -15,6 +15,7 @@ ACCELERATE="${ACCELERATE:-.venv/bin/accelerate}"
 GPUS_PER_NODE="${GPUS_PER_NODE:-1}"
 SLURM_NNODES="${SLURM_NNODES:-1}"
 NUM_PROCESSES="${NUM_PROCESSES:-$((SLURM_NNODES * GPUS_PER_NODE))}"
+MAIN_PROCESS_PORT="${MAIN_PROCESS_PORT:-29500}"
 MODEL="${MODEL:-HuggingFaceBio/Carbon-500M-remote}"
 RUN_NAME="${RUN_NAME:-carbon-500m-promoter-pearson-huber-200k}"
 OUTPUT_DIR="${OUTPUT_DIR:-scratch/promoter_activity/${RUN_NAME}}"
@@ -57,10 +58,12 @@ fi
 "${ACCELERATE}" launch \
   --config_file "${ACCELERATE_CONFIG}" \
   --num_processes "${NUM_PROCESSES}" \
+  --main_process_port "${MAIN_PROCESS_PORT}" \
   finetuning/promoter_activity/promoter_activity_train.py \
   --model "${MODEL}" \
   --dataset_name "${DATASET_NAME:-HuggingFaceBio/random-promoter-dream-2022}" \
   --dataset_config "${DATASET_CONFIG:-supervised}" \
+  --dataset_revision "${DATASET_REVISION:-5b18e5067fd20e589f698a4406ca6e4f2344d68f}" \
   --output_dir "${OUTPUT_DIR}" \
   --run_name "${RUN_NAME}" \
   --learning_rate "${LEARNING_RATE:-2e-5}" \

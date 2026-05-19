@@ -12,14 +12,18 @@ validation/test PCC metrics for the Dev and Hk targets.
 
 ## Environment
 
-Install the normal Carbon requirements, then make sure the finetuning runtime is
-available:
+Install the repository environment and make sure the Hugging Face CLI can see
+your token:
 
 ```sh
-pip install -r requirements.txt
-pip install -U "accelerate>=1.7.0"
+uv sync --frozen
+source .venv/bin/activate
 hf auth whoami
 ```
+
+The Slurm wrappers default to `.venv/bin/accelerate`, so run them from a synced
+checkout or override `ACCELERATE`. If launching multiple Accelerate jobs on the
+same node, set distinct `MAIN_PROCESS_PORT` values for each job.
 
 ## Smoke Run
 
@@ -47,6 +51,11 @@ accelerate launch \
 The defaults use full fine-tuning, Pearson loss, `auto_dna_tags=True`, raw DNA
 truncation to a multiple of 6, no weight decay, bf16 compute, FlashAttention 3,
 and AdamW with beta2 `0.95`.
+
+FlashAttention 3 is selected with
+`--attn_implementation kernels-community/flash-attn3` and requires compatible
+GPU, CUDA, and Transformers versions. For a more portable smoke run, use
+`--attn_implementation sdpa`; for Slurm, set `ATTN_IMPLEMENTATION=sdpa`.
 
 ```sh
 accelerate launch \

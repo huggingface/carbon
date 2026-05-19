@@ -41,6 +41,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model", default=MODEL_NAME)
     parser.add_argument("--revision", default=None)
     parser.add_argument("--source_url", default=SOURCE_URL)
+    parser.add_argument(
+        "--download_timeout",
+        type=float,
+        default=1800.0,
+        help="Total timeout in seconds for downloading the Malinois source table.",
+    )
+    parser.add_argument(
+        "--download_max_retries",
+        type=int,
+        default=3,
+        help="Retry count for downloading the Malinois source table.",
+    )
     parser.add_argument("--output_dir", default="scratch/malinois/carbon-3b-mse")
     parser.add_argument("--run_name", default=None)
     parser.add_argument("--resume_from_checkpoint", default=None)
@@ -239,6 +251,8 @@ def finite_rows(batch: dict[str, list[Any]], columns: tuple[str, ...]) -> list[b
 
 
 def load_malinois_dataset(args: argparse.Namespace) -> Any:
+    from aiohttp import ClientTimeout
+    from datasets import DownloadConfig
     from datasets import Features
     from datasets import Value
     from datasets import load_dataset
@@ -265,6 +279,12 @@ def load_malinois_dataset(args: argparse.Namespace) -> Any:
         delimiter="\t",
         split="train",
         features=features,
+        download_config=DownloadConfig(
+            max_retries=args.download_max_retries,
+            storage_options={
+                "client_kwargs": {"timeout": ClientTimeout(total=args.download_timeout)}
+            },
+        ),
     )
     required = {"IDs", "chr", "sequence", *TARGET_COLUMNS, *SE_COLUMNS}
     missing = sorted(required.difference(raw.column_names))

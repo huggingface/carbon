@@ -16,6 +16,7 @@ SLURM_NNODES="${SLURM_NNODES:-1}"
 NUM_PROCESSES="${NUM_PROCESSES:-$((SLURM_NNODES * GPUS_PER_NODE))}"
 ACCELERATE_CONFIG="${ACCELERATE_CONFIG:-finetuning/deepstarr/fsdp2_carbon.yaml}"
 ACCELERATE="${ACCELERATE:-.venv/bin/accelerate}"
+MAIN_PROCESS_PORT="${MAIN_PROCESS_PORT:-29500}"
 MODEL="${MODEL:-HuggingFaceBio/Carbon-3B}"
 RUN_NAME="${RUN_NAME:-carbon-3b-malinois-mse}"
 OUTPUT_DIR="${OUTPUT_DIR:-scratch/malinois/${RUN_NAME}}"
@@ -30,6 +31,12 @@ fi
 EXTRA_ARGS=()
 if [[ -n "${SOURCE_URL:-}" ]]; then
   EXTRA_ARGS+=(--source_url "${SOURCE_URL}")
+fi
+if [[ -n "${DOWNLOAD_TIMEOUT:-}" ]]; then
+  EXTRA_ARGS+=(--download_timeout "${DOWNLOAD_TIMEOUT}")
+fi
+if [[ -n "${DOWNLOAD_MAX_RETRIES:-}" ]]; then
+  EXTRA_ARGS+=(--download_max_retries "${DOWNLOAD_MAX_RETRIES}")
 fi
 if [[ -n "${EVAL_STEPS:-}" ]]; then
   EXTRA_ARGS+=(--eval_steps "${EVAL_STEPS}")
@@ -68,6 +75,7 @@ fi
 "${ACCELERATE}" launch \
   --config_file "${ACCELERATE_CONFIG}" \
   --num_processes "${NUM_PROCESSES}" \
+  --main_process_port "${MAIN_PROCESS_PORT}" \
   finetuning/malinois/malinois_train.py \
   --model "${MODEL}" \
   --output_dir "${OUTPUT_DIR}" \

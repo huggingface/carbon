@@ -16,6 +16,12 @@ The defaults keep the settings that worked in our runs: full fine-tuning, MSE
 on train-z-scored log2FC labels, `auto_dna_tags=True`, reverse-complement train
 duplication, high-activity row duplication, reverse-complement averaged final
 metrics, no weight decay, global batch size 256 on 8 GPUs, and `lr=1e-5`.
+The default attention backend is
+`kernels-community/flash-attn3`, which requires compatible GPU, CUDA, and
+Transformers versions. For a more portable smoke run, use
+`--attn_implementation sdpa`; for Slurm, set `ATTN_IMPLEMENTATION=sdpa`.
+The source MPRA table is large, so the loader uses a longer download timeout;
+for Slurm, override it with `DOWNLOAD_TIMEOUT` if needed.
 
 The script intentionally omits the exploratory loss variants, plotting code,
 local data downloads, and report-generation utilities from the experiment
