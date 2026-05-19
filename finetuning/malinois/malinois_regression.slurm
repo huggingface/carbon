@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=carbon-deepstarr
+#SBATCH --job-name=carbon-malinois
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
-#SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=16
-#SBATCH --time=24:00:00
+#SBATCH --gres=gpu:8
+#SBATCH --cpus-per-task=64
+#SBATCH --mem=512G
+#SBATCH --time=48:00:00
 #SBATCH --output=logs/%x-%j.out
 
 source ~/.bashrc
 set -euo pipefail
 
-GPUS_PER_NODE="${GPUS_PER_NODE:-1}"
+GPUS_PER_NODE="${GPUS_PER_NODE:-8}"
 if [[ "${SLURM_NNODES:-1}" != "1" ]]; then
   echo "This wrapper is configured for single-node Accelerate launches; set up multi-node Accelerate explicitly." >&2
   exit 1
@@ -26,13 +27,26 @@ if [[ -z "${MAIN_PROCESS_PORT:-}" ]]; then
   fi
 fi
 MODEL="${MODEL:-HuggingFaceBio/Carbon-3B}"
-RUN_NAME="${RUN_NAME:-carbon-3b-deepstarr-regression-train}"
-OUTPUT_DIR="${OUTPUT_DIR:-scratch/deepstarr/${RUN_NAME}}"
+RUN_NAME="${RUN_NAME:-carbon-3b-malinois-mse}"
+OUTPUT_DIR="${OUTPUT_DIR:-scratch/malinois/${RUN_NAME}}"
 
 export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-8}"
 
+if [[ -x ".venv/bin/hf" ]]; then
+  .venv/bin/hf auth whoami || true
+fi
+
 EXTRA_ARGS=()
+if [[ -n "${SOURCE_URL:-}" ]]; then
+  EXTRA_ARGS+=(--source_url "${SOURCE_URL}")
+fi
+if [[ -n "${DOWNLOAD_TIMEOUT:-}" ]]; then
+  EXTRA_ARGS+=(--download_timeout "${DOWNLOAD_TIMEOUT}")
+fi
+if [[ -n "${DOWNLOAD_MAX_RETRIES:-}" ]]; then
+  EXTRA_ARGS+=(--download_max_retries "${DOWNLOAD_MAX_RETRIES}")
+fi
 if [[ -n "${EVAL_STEPS:-}" ]]; then
   EXTRA_ARGS+=(--eval_steps "${EVAL_STEPS}")
 fi
@@ -51,6 +65,15 @@ fi
 if [[ -n "${LR_SCHEDULER_KWARGS:-}" ]]; then
   EXTRA_ARGS+=(--lr_scheduler_kwargs "${LR_SCHEDULER_KWARGS}")
 fi
+if [[ "${NO_TRAIN_REVERSE_COMPLEMENT:-false}" == "true" ]]; then
+  EXTRA_ARGS+=(--no-train_reverse_complement)
+fi
+if [[ "${NO_DUPLICATE_HIGH_ACTIVITY:-false}" == "true" ]]; then
+  EXTRA_ARGS+=(--no-duplicate_high_activity)
+fi
+if [[ "${NO_RC_EVAL_AVERAGE:-false}" == "true" ]]; then
+  EXTRA_ARGS+=(--no-rc_eval_average)
+fi
 if [[ "${SKIP_TEST:-false}" == "true" ]]; then
   EXTRA_ARGS+=(--skip_test)
 fi
@@ -62,20 +85,21 @@ fi
   --config_file "${ACCELERATE_CONFIG}" \
   --num_processes "${NUM_PROCESSES}" \
   --main_process_port "${MAIN_PROCESS_PORT}" \
-  finetuning/deepstarr/deepstarr_train.py \
+  finetuning/malinois/malinois_train.py \
   --model "${MODEL}" \
   --output_dir "${OUTPUT_DIR}" \
   --run_name "${RUN_NAME}" \
-  --learning_rate "${LEARNING_RATE:-2e-5}" \
+  --learning_rate "${LEARNING_RATE:-1e-5}" \
   --weight_decay "${WEIGHT_DECAY:-0.0}" \
   --warmup_ratio "${WARMUP_RATIO:-0.05}" \
   --lr_scheduler_type "${LR_SCHEDULER_TYPE:-reduce_lr_on_plateau}" \
   --dna_mode "${DNA_MODE:-auto_dna_tags}" \
-  --truncate_to_multiple_of "${TRUNCATE_TO_MULTIPLE_OF:-6}" \
   --max_length "${MAX_LENGTH:-512}" \
-  --num_train_epochs "${NUM_TRAIN_EPOCHS:-2.5}" \
+  --metric_se_threshold "${METRIC_SE_THRESHOLD:-1.0}" \
+  --high_activity_threshold "${HIGH_ACTIVITY_THRESHOLD:-0.5}" \
+  --num_train_epochs "${NUM_TRAIN_EPOCHS:-3}" \
   --per_device_train_batch_size "${PER_DEVICE_TRAIN_BATCH_SIZE:-32}" \
-  --per_device_eval_batch_size "${PER_DEVICE_EVAL_BATCH_SIZE:-64}" \
+  --per_device_eval_batch_size "${PER_DEVICE_EVAL_BATCH_SIZE:-8}" \
   --gradient_accumulation_steps "${GRADIENT_ACCUMULATION_STEPS:-1}" \
   --torch_dtype "${TORCH_DTYPE:-bfloat16}" \
   --bf16 \

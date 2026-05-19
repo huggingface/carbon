@@ -5,7 +5,23 @@ This directory contains task-specific fine-tuning recipes for Carbon models.
 | Recipe | Task | Metric |
 |---|---|---|
 | [`deepstarr/`](deepstarr/) | DeepSTARR enhancer activity regression | PCC / log PCC |
+| [`promoter_activity/`](promoter_activity/) | Random Promoter DREAM activity regression | PCC / Spearman |
+| [`malinois/`](malinois/) | Malinois MPRA activity regression | PCC / Spearman |
 | [`finetune_promoter.py`](finetune_promoter.py) | GUE promoter detection | accuracy, F1, MCC, AUROC |
+
+## Environment
+
+Use the repository environment before running the recipe scripts:
+
+```sh
+uv sync --frozen
+source .venv/bin/activate
+hf auth whoami
+```
+
+The Slurm wrappers in this directory are single-node launch templates. For
+multi-node training, use a matching Accelerate config and pass the appropriate
+machine-rank/main-process settings explicitly.
 
 ## DeepSTARR
 
@@ -23,6 +39,49 @@ accelerate launch \
 ```
 
 See [`deepstarr/README.md`](deepstarr/README.md) for the full launch notes.
+
+## Random Promoter DREAM Activity
+
+The promoter activity recipe fine-tunes `HuggingFaceBio/Carbon-500M-remote` on
+`HuggingFaceBio/random-promoter-dream-2022` with the validated 200k-example
+Pearson-Huber setup. The loss gathers predictions and labels across ranks for
+multi-device launches, so Pearson correlation is computed on the global
+microbatch rather than independently on each rank.
+
+```sh
+accelerate launch \
+  --config_file finetuning/deepstarr/fsdp2_carbon.yaml \
+  --num_processes 1 \
+  finetuning/promoter_activity/promoter_activity_train.py \
+  --output_dir scratch/promoter_activity/carbon-500m-pearson-huber-200k
+```
+
+See [`promoter_activity/README.md`](promoter_activity/) for the full launch
+notes.
+
+## Malinois MPRA
+
+The Malinois recipe fine-tunes Carbon on the Gosai et al. MPRA regression table
+for three cell-type activity targets: K562, HepG2, and SK-N-SH. It uses the
+benchmark chromosome holdout split and an MSE-only full fine-tuning recipe.
+
+```sh
+accelerate launch \
+  --config_file finetuning/deepstarr/fsdp2_carbon.yaml \
+  --num_processes 1 \
+  finetuning/malinois/malinois_train.py \
+  --model HuggingFaceBio/Carbon-3B \
+  --output_dir scratch/malinois/carbon-3b-mse-smoke \
+  --max_train_samples 512 \
+  --max_eval_samples 128 \
+  --max_steps 10 \
+  --eval_steps 5 \
+  --per_device_train_batch_size 1 \
+  --per_device_eval_batch_size 2 \
+  --skip_test
+```
+
+See [`malinois/README.md`](malinois/README.md) for the full launch notes.
 
 ## Promoter Detection
 
@@ -82,5 +141,6 @@ loader that yields `(sequence, label)` and keep
 ### Dependencies
 
 ```sh
-pip install transformers datasets torch scikit-learn
+uv sync --frozen
+source .venv/bin/activate
 ```

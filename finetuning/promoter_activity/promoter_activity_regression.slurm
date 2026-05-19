@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=carbon-deepstarr
+#SBATCH --job-name=carbon-promoter
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:1
@@ -10,14 +10,14 @@
 source ~/.bashrc
 set -euo pipefail
 
+ACCELERATE_CONFIG="${ACCELERATE_CONFIG:-finetuning/deepstarr/fsdp2_carbon.yaml}"
+ACCELERATE="${ACCELERATE:-.venv/bin/accelerate}"
 GPUS_PER_NODE="${GPUS_PER_NODE:-1}"
 if [[ "${SLURM_NNODES:-1}" != "1" ]]; then
   echo "This wrapper is configured for single-node Accelerate launches; set up multi-node Accelerate explicitly." >&2
   exit 1
 fi
 NUM_PROCESSES="${NUM_PROCESSES:-${GPUS_PER_NODE}}"
-ACCELERATE_CONFIG="${ACCELERATE_CONFIG:-finetuning/deepstarr/fsdp2_carbon.yaml}"
-ACCELERATE="${ACCELERATE:-.venv/bin/accelerate}"
 if [[ -z "${MAIN_PROCESS_PORT:-}" ]]; then
   if [[ -n "${SLURM_JOB_ID:-}" ]]; then
     MAIN_PROCESS_PORT="$((29500 + SLURM_JOB_ID % 1000))"
@@ -25,9 +25,9 @@ if [[ -z "${MAIN_PROCESS_PORT:-}" ]]; then
     MAIN_PROCESS_PORT="29500"
   fi
 fi
-MODEL="${MODEL:-HuggingFaceBio/Carbon-3B}"
-RUN_NAME="${RUN_NAME:-carbon-3b-deepstarr-regression-train}"
-OUTPUT_DIR="${OUTPUT_DIR:-scratch/deepstarr/${RUN_NAME}}"
+MODEL="${MODEL:-HuggingFaceBio/Carbon-500M-remote}"
+RUN_NAME="${RUN_NAME:-carbon-500m-promoter-pearson-huber-200k}"
+OUTPUT_DIR="${OUTPUT_DIR:-scratch/promoter_activity/${RUN_NAME}}"
 
 export TOKENIZERS_PARALLELISM="${TOKENIZERS_PARALLELISM:-false}"
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-8}"
@@ -51,8 +51,14 @@ fi
 if [[ -n "${LR_SCHEDULER_KWARGS:-}" ]]; then
   EXTRA_ARGS+=(--lr_scheduler_kwargs "${LR_SCHEDULER_KWARGS}")
 fi
+if [[ -n "${ATTN_IMPLEMENTATION:-}" ]]; then
+  EXTRA_ARGS+=(--attn_implementation "${ATTN_IMPLEMENTATION}")
+fi
 if [[ "${SKIP_TEST:-false}" == "true" ]]; then
   EXTRA_ARGS+=(--skip_test)
+fi
+if [[ "${SAVE_PREDICTIONS:-true}" == "false" ]]; then
+  EXTRA_ARGS+=(--no-save_predictions)
 fi
 if [[ "${SAVE_MODEL:-false}" == "true" ]]; then
   EXTRA_ARGS+=(--save_model)
@@ -62,23 +68,26 @@ fi
   --config_file "${ACCELERATE_CONFIG}" \
   --num_processes "${NUM_PROCESSES}" \
   --main_process_port "${MAIN_PROCESS_PORT}" \
-  finetuning/deepstarr/deepstarr_train.py \
+  finetuning/promoter_activity/promoter_activity_train.py \
   --model "${MODEL}" \
+  --dataset_name "${DATASET_NAME:-HuggingFaceBio/random-promoter-dream-2022}" \
+  --dataset_config "${DATASET_CONFIG:-supervised}" \
+  --dataset_revision "${DATASET_REVISION:-5b18e5067fd20e589f698a4406ca6e4f2344d68f}" \
   --output_dir "${OUTPUT_DIR}" \
   --run_name "${RUN_NAME}" \
   --learning_rate "${LEARNING_RATE:-2e-5}" \
   --weight_decay "${WEIGHT_DECAY:-0.0}" \
   --warmup_ratio "${WARMUP_RATIO:-0.05}" \
-  --lr_scheduler_type "${LR_SCHEDULER_TYPE:-reduce_lr_on_plateau}" \
+  --lr_scheduler_type "${LR_SCHEDULER_TYPE:-cosine}" \
   --dna_mode "${DNA_MODE:-auto_dna_tags}" \
-  --truncate_to_multiple_of "${TRUNCATE_TO_MULTIPLE_OF:-6}" \
   --max_length "${MAX_LENGTH:-512}" \
-  --num_train_epochs "${NUM_TRAIN_EPOCHS:-2.5}" \
-  --per_device_train_batch_size "${PER_DEVICE_TRAIN_BATCH_SIZE:-32}" \
-  --per_device_eval_batch_size "${PER_DEVICE_EVAL_BATCH_SIZE:-64}" \
+  --num_train_epochs "${NUM_TRAIN_EPOCHS:-1.0}" \
+  --per_device_train_batch_size "${PER_DEVICE_TRAIN_BATCH_SIZE:-16}" \
+  --per_device_eval_batch_size "${PER_DEVICE_EVAL_BATCH_SIZE:-32}" \
   --gradient_accumulation_steps "${GRADIENT_ACCUMULATION_STEPS:-1}" \
+  --huber_delta "${HUBER_DELTA:-1.0}" \
+  --huber_loss_weight "${HUBER_LOSS_WEIGHT:-0.2}" \
   --torch_dtype "${TORCH_DTYPE:-bfloat16}" \
   --bf16 \
   --gradient_checkpointing \
-  --attn_implementation "${ATTN_IMPLEMENTATION:-kernels-community/flash-attn3}" \
   "${EXTRA_ARGS[@]}"
