@@ -20,7 +20,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EVO2_BENCHMARK_SCRIPT = (
-    REPO_ROOT / "evaluation" / "scripts" / "benchmark_evo2_serving.py"
+    REPO_ROOT / "evaluation" / "serving" / "benchmark_evo2_serving.py"
 )
 DEFAULT_OUTPUT_ROOT = REPO_ROOT / "scratch" / "serving_benchmarks"
 DEFAULT_CARBON_MODEL = "HuggingFaceBio/Carbon-3B"

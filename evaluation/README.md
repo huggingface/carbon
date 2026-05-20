@@ -12,6 +12,7 @@ one flag, so the same script runs on Carbon, GENERator, or Evo2.
 3. [ClinVar VEP](#3-clinvar-vep) — right-end / next-token scoring (GENERator recipe)
 4. [Sequence-level perturbation tasks](#4-sequence-level-perturbation-tasks) — nucleotide triplet-expansion + synonymous codon substitution, new tasks we built
 5. [Genome-NIAH long-context retrieval](#5-genome-niah-long-context-retrieval) — long-context needle-in-a-haystack for DNA (4 tasks × 6 context lengths up to 786 kbp)
+6. [Serving inference benchmarks](#6-serving-inference-benchmarks) — vLLM and Evo2 latency / throughput on sequence-recovery prompts
 
 ## Scripts
 
@@ -333,6 +334,97 @@ for SHARD in 0 1 2 3 4 5; do
     sbatch evaluation/slurm/evo2-7b/genome_niah.sbatch
 done
 ```
+
+## 6. Serving inference benchmarks
+
+Serving benchmarks live in [`evaluation/serving/`](serving). They sample
+prompts from the sequence-recovery dataset, run fixed-length generation, and
+write vLLM-style latency / throughput metrics under `scratch/serving_benchmarks`.
+The wrapper runs Carbon through `vllm serve`, optional speculative Carbon with a
+draft model, optional GENERator through vLLM, and Evo2 through the local Evo2
+benchmark helper.
+
+Use `--dry-run` first to prepare prompt files and inspect the exact server and
+benchmark commands without starting any model servers:
+
+```bash
+uv run --group evaluation python evaluation/serving/run_serving_benchmarks.py \
+    --run-id serving-dry-run \
+    --num-prompts 4 \
+    --input-bp 1080 --output-bp 1080 \
+    --gpu-ids 0,1 --max-parallel 2 \
+    --generator never \
+    --dry-run
+```
+
+The dry run writes commands to:
+
+```text
+scratch/serving_benchmarks/serving-dry-run/dry_run_commands.sh
+```
+
+Carbon-only vLLM smoke benchmark:
+
+```bash
+uv run --group evaluation python evaluation/serving/run_serving_benchmarks.py \
+    --run-id carbon-3b-vllm-smoke \
+    --num-prompts 16 \
+    --input-bp 1080 --output-bp 1080 \
+    --gpu-ids 0 --max-parallel 1 \
+    --skip-evo2 --skip-speculative --generator never
+```
+
+Carbon target plus speculative decoding with a Carbon draft model:
+
+```bash
+uv run --group evaluation python evaluation/serving/run_serving_benchmarks.py \
+    --run-id carbon-3b-speculative \
+    --num-prompts 64 \
+    --input-bp 1080 --output-bp 1080 \
+    --gpu-ids 0,1,2,3 --max-parallel 4 \
+    --carbon-model HuggingFaceBio/Carbon-3B \
+    --carbon-draft-model HuggingFaceBio/Carbon-500M \
+    --carbon-speculative-tokens 2 4 8 \
+    --skip-evo2 --generator never
+```
+
+Full comparison on one 8-GPU node, including Carbon, speculative Carbon, Evo2,
+and GENERator when its vLLM compatibility probe succeeds:
+
+```bash
+uv run --group evaluation python evaluation/serving/run_serving_benchmarks.py \
+    --run-id serving-full-8gpu \
+    --num-prompts 128 \
+    --input-bp 1080 --output-bp 1080 \
+    --gpu-ids 0,1,2,3,4,5,6,7 --max-parallel 8 \
+    --generator auto
+```
+
+To run only the Evo2 helper, first prepare prompts, then point
+[`benchmark_evo2_serving.py`](serving/benchmark_evo2_serving.py) at the Evo2
+prompt JSONL:
+
+```bash
+uv run --group evaluation python evaluation/serving/run_serving_benchmarks.py \
+    --run-id evo2-serving-prompts \
+    --num-prompts 16 \
+    --input-bp 1080 --output-bp 1080 \
+    --prepare-only
+
+uv run --group evaluation python evaluation/serving/benchmark_evo2_serving.py \
+    --model evo2_7b \
+    --dataset-path scratch/serving_benchmarks/evo2-serving-prompts/prompts/evo2_prompts.jsonl \
+    --num-prompts 16 \
+    --output-dir scratch/serving_benchmarks/evo2-7b-direct \
+    --temperature 1.0 --top-k 1 --top-p 0.0
+```
+
+Each run writes a top-level `summary.csv` and `summary.json`, plus one
+subdirectory per benchmark with `commands.json`, logs, `benchmark.json`, and
+`detailed.json` where available. The `output_throughput` column is generated
+tokens per second; `output_bp_per_second` converts Carbon and GENERator 6-mer
+tokens back to base pairs per second.
+
 ## Environment
 
 Install the root project environment with uv:
