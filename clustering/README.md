@@ -39,14 +39,14 @@ Taxonomic structure in the separator embedding space cannot be explained by sequ
 ```
 carbon/clustering/
 ├── embedding_extraction/
-│   ├── run_carbon_test_new_3emb_v2_16k.py   # content-token embedding @ 16K bp → content_embeddings.npy
-│   └── run_carbon_genstyle_ctx_full.py       # separator embedding @ 8K/16K/48K → last_token_embeddings.npy
+│   ├── extract_content_token_embeddings.py   # content-token embedding @ 16K bp → content_embeddings.npy
+│   └── extract_separator_embeddings.py       # separator embedding @ 8K/16K/48K → last_token_embeddings.npy
 │
 └── plots/
-    ├── plot_svm2d_u12.py                     # 3D UMAP → 2D SVM on (U1,U2) → PDFs + round-2 caches
-    ├── plot_merged_svm_grid.py               # merged 2×3 grid — main figure
-    ├── plot_svm2d_u12_stats.py               # strand / phase / species breakdown per cluster
-    └── plot_last_row_nn100.py                # context-length ablation 1×3 row
+    ├── plot_content_token_umap_svm.py                     # 3D UMAP → 2D SVM on (U1,U2) → PDFs + round-2 caches
+    ├── plot_svm_cluster_grid.py               # merged 2×3 grid — main figure
+    ├── plot_cluster_stats.py               # strand / phase / species breakdown per cluster
+    └── plot_context_length_ablation.py                # context-length ablation 1×3 row
 ```
 
 ---
@@ -56,10 +56,10 @@ carbon/clustering/
 ### Content-token embedding — SVM cluster analysis
 
 ```bash
-python clustering/embedding_extraction/run_carbon_test_new_3emb_v2_16k.py
-python clustering/plots/plot_svm2d_u12.py
-python clustering/plots/plot_merged_svm_grid.py
-python clustering/plots/plot_svm2d_u12_stats.py
+python clustering/embedding_extraction/extract_content_token_embeddings.py
+python clustering/plots/plot_content_token_umap_svm.py
+python clustering/plots/plot_svm_cluster_grid.py
+python clustering/plots/plot_cluster_stats.py
 ```
 
 **Input:** `data/eukaryote/test_new.parquet`  
@@ -80,10 +80,10 @@ python clustering/plots/plot_svm2d_u12_stats.py
 ### Separator embedding — context-length ablation
 
 ```bash
-python clustering/embedding_extraction/run_carbon_genstyle_ctx_full.py --max_length 8192  --out_dir clustering/output/carbon_genstyle_8k_full
-python clustering/embedding_extraction/run_carbon_genstyle_ctx_full.py --max_length 16384 --out_dir clustering/output/carbon_genstyle_16k_full
-python clustering/embedding_extraction/run_carbon_genstyle_ctx_full.py --max_length 49152 --out_dir clustering/output/carbon_genstyle_48k_full
-python clustering/plots/plot_last_row_nn100.py
+python clustering/embedding_extraction/extract_separator_embeddings.py --max_length 8192  --out_dir clustering/output/carbon_genstyle_8k_full
+python clustering/embedding_extraction/extract_separator_embeddings.py --max_length 16384 --out_dir clustering/output/carbon_genstyle_16k_full
+python clustering/embedding_extraction/extract_separator_embeddings.py --max_length 49152 --out_dir clustering/output/carbon_genstyle_48k_full
+python clustering/plots/plot_context_length_ablation.py
 ```
 
 **Output:** `clustering/output/carbon_last_token_nn100_row.pdf`
