@@ -102,7 +102,7 @@ All three metrics improve monotonically with context length. At 8k nucleotides t
 | 16 kb | 0.990 | 0.316 | 0.415 |
 | **48 kb** | **0.995** | **0.380** | **0.474** |
 
-![Context-length ablation](clustering/output/carbon_last_token_nn100_row.png)
+![Context-length ablation](figures/carbon_last_token_nn100_row.png)
 
 ---
 
@@ -123,13 +123,13 @@ The first split is **not explained by strand orientation or codon phase** — bo
 This result is notable because Carbon-3B uses non-overlapping 6-mer tokenization. The content-token geometry recovers the natural three-phase structure of coding sequences rather than a 6-periodic artifact, showing that 6-mer tokenization does not prevent the model from representing nucleotide-level reading-frame information at a resolution finer than the token unit.
 
 #### Global U1×U2 — clusters / strand / phase
-![umap12 overlay](clustering/output/carbon_test_new_3emb_v2_16k/green_plots/umap12_clusters_overlay_svm2d.png)
+![umap12 overlay](figures/umap12_clusters_overlay_svm2d.png)
 
 #### Round-2 UMAP — left cluster (n=21,608)
-![round2 left](clustering/output/carbon_test_new_3emb_v2_16k/green_plots/round2_left_umap12_svm2d.png)
+![round2 left](figures/round2_left_umap12_svm2d.png)
 
 #### Round-2 UMAP — right cluster (n=7,803)
-![round2 right](clustering/output/carbon_test_new_3emb_v2_16k/green_plots/round2_right_umap12_svm2d.png)
+![round2 right](figures/round2_right_umap12_svm2d.png)
 
 #### Cluster composition — strand / phase / species
-![cluster stats](clustering/output/carbon_test_new_3emb_v2_16k/green_plots/umap12_cluster_stats_svm2d.png)
+![cluster stats](figures/umap12_cluster_stats_svm2d.png)
