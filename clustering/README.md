@@ -43,10 +43,10 @@ carbon/clustering/
 │   └── extract_separator_embeddings.py       # separator embedding @ 8K/16K/48K → last_token_embeddings.npy
 │
 └── plots/
-    ├── plot_content_token_umap_svm.py                     # 3D UMAP → 2D SVM on (U1,U2) → PDFs + round-2 caches
-    ├── plot_svm_cluster_grid.py               # merged 2×3 grid — main figure
-    ├── plot_cluster_stats.py               # strand / phase / species breakdown per cluster
-    └── plot_context_length_ablation.py                # context-length ablation 1×3 row
+    ├── plot_content_token_umap_svm.py        # 3D UMAP → 2D SVM on (U1,U2) → PDFs + round-2 caches
+    ├── plot_svm_cluster_grid.py              # merged 2×3 grid — main figure
+    ├── plot_cluster_stats.py                 # strand / phase / species breakdown per cluster
+    └── plot_context_length_ablation.py       # context-length ablation 1×3 row
 ```
 
 ---
