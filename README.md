@@ -157,38 +157,12 @@ the full example.
 
 For autoregressive DNA sequence modeling, we provide
 [`finetuning/finetune_sft.py`](finetuning/finetune_sft.py), which uses
-**Fine-grained Nucleotide Supervision (FNS)** via the custom `FNSTrainer`.
+**Factorized Nucleotide Supervision (FNS)** via the custom `FNSTrainer`.
+FNS applies base-pair level loss for DNA k-mer tokens, providing finer-grained
+supervision than standard token-level loss.
 
-FNS applies **base-pair level loss** for DNA k-mer tokens by marginalizing
-token-level predictions to nucleotide-level predictions. For each position `i`
-in a k-mer, the model learns `P(nucleotide_i | context)` by summing
-probabilities over all k-mers with that nucleotide at position `i`. This
-provides k× more supervision signal per token compared to standard token-level
-loss.
-
-**Quick start:**
-
-```bash
-# Single GPU
-python finetuning/finetune_sft.py \
-    --model HuggingFaceBio/Carbon-3B \
-    --dataset your/dataset \
-    --output_dir ./outputs/sft-carbon-3B
-
-# Multi-GPU with DNA-only loss
-torchrun --nproc_per_node=8 finetuning/finetune_sft.py \
-    --model HuggingFaceBio/Carbon-3B \
-    --dataset your/dataset \
-    --dna_loss_only \
-    --output_dir ./outputs/sft-carbon-3B
-```
-
-The `--dna_loss_only` flag focuses training exclusively on DNA k-mer tokens,
-ignoring BPE tokens. This is useful when fine-tuning on pure DNA sequences.
-
-See [`finetuning/README.md`](finetuning/README.md) for detailed documentation,
-including FNS loss explanation, dataset format requirements, and additional
-fine-tuning recipes (DeepSTARR, promoter activity, Malinois MPRA).
+See [`finetuning/README.md`](finetuning/README.md) for usage examples and
+detailed documentation.
 
 ### Continual Pretraining
 

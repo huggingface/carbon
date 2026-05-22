@@ -63,8 +63,7 @@ natively.
 | Model | Flag |
 |---|---|
 | Carbon hybrid (`Carbon-3B`, `carbon-8B-hybrid-loss-1T-v1`) | `--add_dna_tag` |
-| Carbon pure-DNA (`carbon-3B-pure-dna-*`) | `--add_bos` (sequence-recovery only; uses `<s>`) |
-| GENERator (`GenerTeam/GENERator-*`) | _(no flag — raw DNA)_ |
+| GENERator (`GenerTeam/GENERator-*`) | `--add_bos` |
 | Evo2 (`evo2_1b_base`, `evo2_7b`, ...) | `--backend evo2` |
 
 ## 1. Sequence recovery

@@ -142,7 +142,7 @@ loader that yields `(sequence, label)` and keep
 ## Supervised Fine-Tuning with FNSTrainer
 
 The `finetune_sft.py` script performs autoregressive language modeling on DNA
-sequences using **Fine-grained Nucleotide Supervision (FNS)**. FNSTrainer
+sequences using **Factorized Nucleotide Supervision (FNS)**. FNSTrainer
 applies base-pair level loss for DNA k-mer tokens and token-level loss for BPE
 tokens, providing finer-grained supervision than standard causal language
 modeling.
