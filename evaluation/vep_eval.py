@@ -9,24 +9,26 @@ continuous functional score where available.
 The eval is dataset-agnostic — any parquet with the schema
   chrom, pos, ref, alt, score, class, ref_seq, var_seq
 works. We ship two prep scripts that produce this schema:
-  - prep_brca2.py     → HuggingFaceBio/brca2-vep     (6,836 SNVs)
-  - prep_traitgym.py  → HuggingFaceBio/traitgym      (Mendelian: 3,380 / Complex: 11,400)
+
+  - prep_brca2.py    → HuggingFaceBio/brca2-vep (6,836 SNVs)
+  - prep_traitgym.py → HuggingFaceBio/traitgym (Mendelian: 3,380 / Complex: 11,400)
 
 For ClinVar, see clinvar_vep_eval.py — it uses a different scoring recipe
 (next-token at the right end of a left-context window, instead of centered
 + full-LL delta).
 
 References:
-  BRCA2:    Huang et al. 2025, Nature s41586-024-08388-8    (Evo2 §A.3.15)
+  BRCA2:    Huang et al. 2025, Nature s41586-024-08388-8 (Evo2 §A.3.15)
   TraitGym: Benegas, Eraslan & Song 2025, bioRxiv 2025.02.11.637758
 
 Example:
+
   # Carbon 3B hybrid on BRCA2 (8 GPUs)
   python vep_eval.py \
       --model HuggingFaceBio/Carbon-3B \
       --data_path hf://datasets/HuggingFaceBio/brca2-vep/brca2_vep.parquet \
       --bf16 --output_dir ./results/brca2_vep
-    
+
   # GENERator on BRCA2 (8 GPUs)
   python vep_eval.py \
       --model GenerTeam/GENERator-v2-eukaryote-3b-base \
@@ -38,7 +40,7 @@ Example:
       --model evo2_7b --backend evo2 \
       --data_path hf://datasets/HuggingFaceBio/brca2-vep/brca2_vep.parquet \
       --bf16 --output_dir ./results/brca2_vep
-    
+
   # TraitGym Mendelian
   python vep_eval.py \
       --model HuggingFaceBio/Carbon-3B \
@@ -90,15 +92,18 @@ def _revcomp(seq: str) -> str:
 def _shard_worker(args):
     """Score one GPU shard. Uses bp-level score_sequence if available, otherwise token-level scoring."""
     shard_id, items, model, revision, dtype, batch_size = args
+
     torch.cuda.set_device(shard_id)
     device = f"cuda:{shard_id}"
-
 
     tok = AutoTokenizer.from_pretrained(model, revision=revision, trust_remote_code=True)
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
+
+    # FIX 2: use torch_dtype (documented kwarg); plain dtype= is silently
+    # ignored by from_pretrained and leaves the model in float32
     m = AutoModelForCausalLM.from_pretrained(
-        model, revision=revision, trust_remote_code=True, dtype=getattr(torch, dtype)
+        model, revision=revision, trust_remote_code=True, torch_dtype=getattr(torch, dtype)
     ).to(device).eval()
 
     # Check if model has score_sequence method for bp-level scoring
@@ -127,7 +132,7 @@ def _shard_worker(args):
                 seqs = [b["seq"] for b in batch]
             else:
                 seqs = [
-                    bos_token + b["seq"][:((len(b["seq"]) // kmer_size) * kmer_size)]
+                    bos_token + b["seq"][: ((len(b["seq"]) // kmer_size) * kmer_size)]
                     for b in batch
                 ]
 
@@ -146,8 +151,13 @@ def _shard_worker(args):
                         out.append((b["uid"], float(mean_logp)))
                 else:
                     # Token-level scoring
-                    enc = tok(seqs, return_tensors="pt", padding=True, truncation=False,
-                             add_special_tokens=False)
+                    enc = tok(
+                        seqs,
+                        return_tensors="pt",
+                        padding=True,
+                        truncation=False,
+                        add_special_tokens=False,
+                    )
                     ids = enc["input_ids"].to(device)
                     attn = enc["attention_mask"].to(device)
 
@@ -166,10 +176,11 @@ def _shard_worker(args):
                         out.append((b["uid"], float(seq_logp[j].item())))
 
             pbar.update(len(batch))
+
     return out
 
 
-def score_hf(df: pd.DataFrame, args) -> tuple[np.ndarray, np.ndarray]:
+def score_hf(df: pd.DataFrame, args) -> tuple:
     """Multi-GPU full-sequence LL scoring across ref+var sequences."""
     items = []
     for i, row in df.iterrows():
@@ -185,15 +196,17 @@ def score_hf(df: pd.DataFrame, args) -> tuple[np.ndarray, np.ndarray]:
         if it["seq"] not in seen:
             seen[it["seq"]] = it["uid"]
             uniq.append(it)
+
     print(f"  {len(items)} scoring requests, {len(uniq)} unique sequences")
 
     n_gpus = torch.cuda.device_count()
     if n_gpus == 0:
         raise RuntimeError("No GPU available")
-    print(f"  sharding across {n_gpus} GPUs")
 
+    print(f"  sharding across {n_gpus} GPUs")
     shard_size = (len(uniq) + n_gpus - 1) // n_gpus
     dtype = "bfloat16" if args.bf16 else "float32"
+
     work = [
         (g, uniq[g * shard_size : (g + 1) * shard_size], args.model, args.revision, dtype, args.batch_size)
         for g in range(n_gpus)
@@ -218,7 +231,7 @@ def score_hf(df: pd.DataFrame, args) -> tuple[np.ndarray, np.ndarray]:
     return ref, var
 
 
-def score_evo2(df: pd.DataFrame, args) -> tuple[np.ndarray, np.ndarray]:
+def score_evo2(df: pd.DataFrame, args) -> tuple:
     """Single-GPU full-sequence LL via the official Evo2 library."""
     from evo2_runtime import preload_cudnn_libraries
 
@@ -229,11 +242,13 @@ def score_evo2(df: pd.DataFrame, args) -> tuple[np.ndarray, np.ndarray]:
 
     ref_seqs, ref_idx = [], {}
     var_seqs = []
+
     for _, row in df.iterrows():
         if row["ref_seq"] not in ref_idx:
             ref_idx[row["ref_seq"]] = len(ref_seqs)
             ref_seqs.append(row["ref_seq"])
         var_seqs.append(row["var_seq"])
+
     ref_lookup = np.array([ref_idx[r] for r in df["ref_seq"]])
 
     print(f"  scoring {len(ref_seqs)} unique reference sequences")
@@ -284,6 +299,7 @@ def main():
     cls = df[df["class"].isin(["LOF", "FUNC/INT"])]
     y = (cls["class"] == "LOF").astype(int).values
     scores = -cls["delta"].values  # lower delta -> more LOF
+
     # Global AUPRC uses auc(recall, precision) — the convention used for the
     # BRCA2 number in Carbon's production reports.
     auroc, auprc = float("nan"), float("nan")
@@ -303,7 +319,9 @@ def main():
             if yc.sum() == 0 or yc.sum() == len(yc):
                 continue
             sc = -sub["delta"].values
-            per_chrom.append((len(sub), float(roc_auc_score(yc, sc)), float(average_precision_score(yc, sc))))
+            per_chrom.append(
+                (len(sub), float(roc_auc_score(yc, sc)), float(average_precision_score(yc, sc)))
+            )
         if per_chrom:
             ws = np.array([p[0] for p in per_chrom], dtype=float)
             ws /= ws.sum()
@@ -327,12 +345,16 @@ def main():
 
     print("=" * 70)
     if multi_chrom:
-        print(f"AUROC by-chrom weighted: {auroc_by_chrom:.4f}   AUPRC by-chrom weighted: {auprc_by_chrom:.4f}   (n_class={len(cls)})   ← headline (leaderboard convention)")
-        print(f"AUROC global:            {auroc:.4f}   AUPRC global:            {auprc:.4f}")
+        print(
+            f"AUROC by-chrom weighted: {auroc_by_chrom:.4f}  "
+            f"AUPRC by-chrom weighted: {auprc_by_chrom:.4f}  "
+            f"(n_class={len(cls)})  ← headline (leaderboard convention)"
+        )
+        print(f"AUROC global: {auroc:.4f}  AUPRC global: {auprc:.4f}")
     else:
-        print(f"AUROC: {auroc:.4f}   AUPRC: {auprc:.4f}   (n_class={len(cls)})")
+        print(f"AUROC: {auroc:.4f}  AUPRC: {auprc:.4f}  (n_class={len(cls)})")
     if not np.isnan(spearman):
-        print(f"Spearman ρ (delta vs functional score): {spearman:.4f}   (n_score={len(sp_df)})")
+        print(f"Spearman ρ (delta vs functional score): {spearman:.4f}  (n_score={len(sp_df)})")
     print("=" * 70)
 
     os.makedirs(args.output_dir, exist_ok=True)
@@ -340,7 +362,9 @@ def main():
     base = f"{model_tag}_{dtype_str}"
     parquet = os.path.join(args.output_dir, f"{base}.parquet")
     summary = os.path.join(args.output_dir, f"{base}.json")
+
     df.drop(columns=["ref_seq", "var_seq"]).to_parquet(parquet)
+
     with open(summary, "w") as f:
         json.dump(
             {
@@ -359,6 +383,7 @@ def main():
             f,
             indent=2,
         )
+
     print(f"Saved {parquet}\n      {summary}")
 
 
