@@ -166,21 +166,22 @@ then point `--data_path` at it.
 uv run --group evaluation python evaluation/vep_eval.py \
     --model HuggingFaceBio/Carbon-3B \
     --data_path hf://datasets/HuggingFaceBio/brca2-vep/brca2_vep.parquet \
-    --add_dna_tag --bf16 \
+    --bf16 \
     --output_dir ./results/brca2_vep
 
 # TraitGym Mendelian — pass --rev_comp_avg, variants can sit on either strand
 uv run --group evaluation python evaluation/vep_eval.py \
     --model HuggingFaceBio/Carbon-3B \
     --data_path hf://datasets/HuggingFaceBio/traitgym/mendelian_traits_vep.parquet \
-    --add_dna_tag --bf16 --rev_comp_avg \
+    --bf16 --rev_comp_avg \
     --output_dir ./results/traitgym_mendelian
 
 # Evo2 7B (1 GPU)
 uv run --group evaluation python evaluation/vep_eval.py \
     --model evo2_7b --backend evo2 \
     --data_path hf://datasets/HuggingFaceBio/brca2-vep/brca2_vep.parquet \
-    --bf16 --output_dir ./results/brca2_vep_evo2
+    --bf16 \
+    --output_dir ./results/brca2_vep_evo2
 ```
 
 ## 3. ClinVar VEP
