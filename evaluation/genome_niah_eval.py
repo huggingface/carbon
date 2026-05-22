@@ -44,7 +44,7 @@ Examples:
   # GENERator-v2 3B at 16k
   python genome_niah_eval.py \\
       --model GenerTeam/GENERator-v2-eukaryote-3b-base \\
-      --task niah --ctx 16384 --bf16
+      --task niah --ctx 16384 --add_bos --bf16
 
   # Evo2-7B at 32k, shard 0 of 6 (run each shard as its own 8-GPU SLURM job)
   python genome_niah_eval.py \\

@@ -63,8 +63,11 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 model_id = "HuggingFaceBio/Carbon-3B"
 tok = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True,
-                                             torch_dtype="bfloat16").to("cuda")
+model = AutoModelForCausalLM.from_pretrained(
+  model_id, 
+  trust_remote_code=True,
+  torch_dtype="bfloat16"
+).to("cuda")
 
 # DNA generation: wrap the prompt with <dna> so the tokenizer routes to 6-mer mode.
 context = "ATGGCCTCGAGCAGCAGCAGCAGCAGCAGCAGCAGCAGCAGCAGCAG"
@@ -140,11 +143,31 @@ flags, and per-benchmark details.
 
 ## Finetuning
 
+The [`finetuning/`](finetuning) directory contains task-specific fine-tuning
+recipes for Carbon models:
+
+### Classification Tasks
+
 A minimal end-to-end finetuning example (promoter detection from the
-Nucleotide Transformer downstream benchmark) lives in
-[`finetuning/`](finetuning). It uses the standard 🤗 Transformers `Trainer`
-with `AutoModelForSequenceClassification` on top of the Carbon backbone — swap
-in any other classification dataset by changing one flag.
+Nucleotide Transformer downstream benchmark) uses the standard 🤗 Transformers
+`Trainer` with `AutoModelForSequenceClassification` on top of the Carbon
+backbone — swap in any other classification dataset by changing one flag.
+
+See [`finetuning/finetune_promoter.py`](finetuning/finetune_promoter.py) for
+the full example.
+
+### Supervised Fine-Tuning with FNS
+
+For autoregressive DNA sequence modeling, we provide
+[`finetuning/finetune_sft.py`](finetuning/finetune_sft.py), which uses
+**Factorized Nucleotide Supervision (FNS)** via the custom `FNSTrainer`.
+FNS applies base-pair level loss for DNA k-mer tokens, providing finer-grained
+supervision than standard token-level loss.
+
+See [`finetuning/README.md`](finetuning/README.md) for usage examples and
+detailed documentation.
+
+### Continual Pretraining
 
 To specialise Carbon on a new clade (e.g. a specific bacterium or protist
 that wasn't well represented in the pretraining mix), the same scaffolding

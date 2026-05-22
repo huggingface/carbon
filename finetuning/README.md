@@ -8,6 +8,7 @@ This directory contains task-specific fine-tuning recipes for Carbon models.
 | [`promoter_activity/`](promoter_activity/) | Random Promoter DREAM activity regression | PCC / Spearman |
 | [`malinois/`](malinois/) | Malinois MPRA activity regression | PCC / Spearman |
 | [`finetune_promoter.py`](finetune_promoter.py) | GUE promoter detection | accuracy, F1, MCC, AUROC |
+| [`finetune_sft.py`](finetune_sft.py) | Supervised fine-tuning with FNS | perplexity / loss |
 
 ## Environment
 
@@ -137,6 +138,93 @@ automatically because Transformers infers `num_labels` from the dataset labels.
 For tasks beyond NT downstream, the same scaffolding works. Write a dataset
 loader that yields `(sequence, label)` and keep
 `AutoModelForSequenceClassification` as the model class.
+
+## Supervised Fine-Tuning with FNSTrainer
+
+The `finetune_sft.py` script performs autoregressive language modeling on DNA
+sequences using **Factorized Nucleotide Supervision (FNS)**. FNSTrainer
+applies base-pair level loss for DNA k-mer tokens and token-level loss for BPE
+tokens, providing finer-grained supervision than standard causal language
+modeling.
+
+### FNS Loss
+
+For DNA k-mer tokens, FNS marginalizes token-level predictions to
+nucleotide-level predictions. For each position `i` in a k-mer:
+
+1. Compute token probabilities: `P(token | context)`
+2. Marginalize to nucleotide probabilities: `P(nucleotide_i | context) = Σ P(token | context)` for all tokens with `nucleotide_i` at position `i`
+3. Apply cross-entropy loss at nucleotide level
+
+This provides k× more supervision signal per token compared to standard
+token-level loss, particularly useful for DNA sequence modeling where
+individual nucleotides matter.
+
+### Usage
+
+Single GPU:
+
+```sh
+python finetune_sft.py \
+    --model HuggingFaceBio/Carbon-3B \
+    --dataset your/dataset \
+    --add_dna_tag \
+    --output_dir ./outputs/sft-carbon-3B
+```
+
+Multi-GPU with `torchrun`:
+
+```sh
+torchrun --nproc_per_node=8 finetune_sft.py \
+    --model HuggingFaceBio/Carbon-3B \
+    --dataset your/dataset \
+    --add_dna_tag \
+    --batch_size 4 --grad_accum 4 \
+    --output_dir ./outputs/sft-carbon-3B
+```
+
+DNA-only loss (ignore BPE tokens):
+
+```sh
+python finetune_sft.py \
+    --model HuggingFaceBio/Carbon-3B \
+    --dataset your/dataset \
+    --add_dna_tag \
+    --dna_loss_only \
+    --output_dir ./outputs/sft-carbon-3B-dna-only
+```
+
+### Key Arguments
+
+- `--add_dna_tag`: Wrap sequences with `<dna>...</dna>` tags (required for Carbon hybrid models)
+- `--dna_loss_only`: Only compute loss on DNA k-mer tokens, ignore BPE tokens
+- `--sequence_column`: Column name for sequences in dataset (default: "sequence")
+- `--max_length`: Maximum sequence length (default: 2048)
+
+### Dataset Format
+
+Your dataset should have a `sequence` column (or specify via `--sequence_column`)
+containing DNA sequences. The script automatically wraps sequences with
+`<dna>...</dna>` tags for hybrid tokenizers and creates labels for causal LM.
+
+Example dataset structure:
+```python
+{
+    "sequence": ["ATCGATCG...", "GCTAGCTA...", ...]
+}
+```
+
+### Implementation
+
+The FNS loss is implemented in [`fns_trainer.py`](fns_trainer.py) as a custom
+`Trainer` subclass. It automatically classifies tokens and applies appropriate
+loss:
+
+- **DNA k-mer tokens**: Base-pair level loss (marginalizes over k-mer vocabulary)
+- **BPE tokens + DNA special tokens** (`<dna>`, `</dna>`, `<oov>`): Token-level cross-entropy loss
+
+The trainer efficiently caches nucleotide mappings and DNA k-mer masks at the
+first forward pass, and is compatible with DDP multi-GPU training.
 
 ### Dependencies
 
