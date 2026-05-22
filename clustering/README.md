@@ -23,8 +23,8 @@ Although these two hidden states differ by only one token position, they exhibit
 
 | Dataset | N | Use |
 |---|---|---|
-| [GenerTeam/sequence-recovery](https://huggingface.co/datasets/GenerTeam/sequence-recovery) (held-out) | 30,000 | Separator embedding — taxonomy + context-length analysis |
-| [GenerTeam/sequence-recovery · eukaryote/test_new.parquet](https://huggingface.co/datasets/GenerTeam/sequence-recovery/blob/main/eukaryote/test_new.parquet) (held-out) | 29,411 | Content-token embedding — strand + codon phase analysis |
+| [GenerTeam/sequence-recovery/eukaryote/test.parquet](https://huggingface.co/datasets/GenerTeam/sequence-recovery)| 30,000 | Separator embedding — taxonomy + context-length analysis |
+| [GenerTeam/sequence-recovery/eukaryote/test_new.parquet](https://huggingface.co/datasets/GenerTeam/sequence-recovery/blob/main/eukaryote/test_new.parquet)| 29,411 | Content-token embedding — strand + codon phase analysis |
 
 Both datasets cover six taxonomic groups: fungi, plants, invertebrates, protozoa, vertebrate (other), vertebrate (mammalian).
 

@@ -45,7 +45,7 @@ def parse_args():
     p.add_argument("--output_dir", required=True)
     p.add_argument("--max_length", type=int, default=2048,
                    help="Maximum sequence length for training")
-    p.add_argument("--add_dna_tag", action="store_true", default=True,
+    p.add_argument("--add_dna_tag", action="store_true",
                    help="Wrap sequences with <dna> tags (for Carbon hybrid models)")
     p.add_argument("--dna_loss_only", action="store_true",
                    help="Only compute loss on DNA k-mer tokens (ignore BPE tokens)")

@@ -168,6 +168,7 @@ Single GPU:
 python finetune_sft.py \
     --model HuggingFaceBio/Carbon-3B \
     --dataset your/dataset \
+    --add_dna_tag \
     --output_dir ./outputs/sft-carbon-3B
 ```
 
@@ -177,6 +178,7 @@ Multi-GPU with `torchrun`:
 torchrun --nproc_per_node=8 finetune_sft.py \
     --model HuggingFaceBio/Carbon-3B \
     --dataset your/dataset \
+    --add_dna_tag \
     --batch_size 4 --grad_accum 4 \
     --output_dir ./outputs/sft-carbon-3B
 ```
@@ -187,14 +189,15 @@ DNA-only loss (ignore BPE tokens):
 python finetune_sft.py \
     --model HuggingFaceBio/Carbon-3B \
     --dataset your/dataset \
+    --add_dna_tag \
     --dna_loss_only \
     --output_dir ./outputs/sft-carbon-3B-dna-only
 ```
 
 ### Key Arguments
 
+- `--add_dna_tag`: Wrap sequences with `<dna>...</dna>` tags (required for Carbon hybrid models)
 - `--dna_loss_only`: Only compute loss on DNA k-mer tokens, ignore BPE tokens
-- `--add_dna_tag`: Wrap sequences with `<dna>...</dna>` tags (default: enabled)
 - `--sequence_column`: Column name for sequences in dataset (default: "sequence")
 - `--max_length`: Maximum sequence length (default: 2048)
 

@@ -63,8 +63,11 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 model_id = "HuggingFaceBio/Carbon-3B"
 tok = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-model = AutoModelForCausalLM.from_pretrained(model_id, trust_remote_code=True,
-                                             torch_dtype="bfloat16").to("cuda")
+model = AutoModelForCausalLM.from_pretrained(
+  model_id, 
+  trust_remote_code=True,
+  torch_dtype="bfloat16"
+).to("cuda")
 
 # DNA generation: wrap the prompt with <dna> so the tokenizer routes to 6-mer mode.
 context = "ATGGCCTCGAGCAGCAGCAGCAGCAGCAGCAGCAGCAGCAGCAGCAG"
