@@ -140,11 +140,57 @@ flags, and per-benchmark details.
 
 ## Finetuning
 
+The [`finetuning/`](finetuning) directory contains task-specific fine-tuning
+recipes for Carbon models:
+
+### Classification Tasks
+
 A minimal end-to-end finetuning example (promoter detection from the
-Nucleotide Transformer downstream benchmark) lives in
-[`finetuning/`](finetuning). It uses the standard 🤗 Transformers `Trainer`
-with `AutoModelForSequenceClassification` on top of the Carbon backbone — swap
-in any other classification dataset by changing one flag.
+Nucleotide Transformer downstream benchmark) uses the standard 🤗 Transformers
+`Trainer` with `AutoModelForSequenceClassification` on top of the Carbon
+backbone — swap in any other classification dataset by changing one flag.
+
+See [`finetuning/finetune_promoter.py`](finetuning/finetune_promoter.py) for
+the full example.
+
+### Supervised Fine-Tuning with FNS
+
+For autoregressive DNA sequence modeling, we provide
+[`finetuning/finetune_sft.py`](finetuning/finetune_sft.py), which uses
+**Fine-grained Nucleotide Supervision (FNS)** via the custom `FNSTrainer`.
+
+FNS applies **base-pair level loss** for DNA k-mer tokens by marginalizing
+token-level predictions to nucleotide-level predictions. For each position `i`
+in a k-mer, the model learns `P(nucleotide_i | context)` by summing
+probabilities over all k-mers with that nucleotide at position `i`. This
+provides k× more supervision signal per token compared to standard token-level
+loss.
+
+**Quick start:**
+
+```bash
+# Single GPU
+python finetuning/finetune_sft.py \
+    --model HuggingFaceBio/Carbon-3B \
+    --dataset your/dataset \
+    --output_dir ./outputs/sft-carbon-3B
+
+# Multi-GPU with DNA-only loss
+torchrun --nproc_per_node=8 finetuning/finetune_sft.py \
+    --model HuggingFaceBio/Carbon-3B \
+    --dataset your/dataset \
+    --dna_loss_only \
+    --output_dir ./outputs/sft-carbon-3B
+```
+
+The `--dna_loss_only` flag focuses training exclusively on DNA k-mer tokens,
+ignoring BPE tokens. This is useful when fine-tuning on pure DNA sequences.
+
+See [`finetuning/README.md`](finetuning/README.md) for detailed documentation,
+including FNS loss explanation, dataset format requirements, and additional
+fine-tuning recipes (DeepSTARR, promoter activity, Malinois MPRA).
+
+### Continual Pretraining
 
 To specialise Carbon on a new clade (e.g. a specific bacterium or protist
 that wasn't well represented in the pretraining mix), the same scaffolding
