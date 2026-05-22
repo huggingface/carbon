@@ -83,7 +83,7 @@ uv run --group evaluation python evaluation/sequence_recovery.py \
 # GENERator
 uv run --group evaluation python evaluation/sequence_recovery.py \
     --model GenerTeam/GENERator-v2-eukaryote-1.2b-base \
-    --data_type eukaryote --bf16
+    --data_type eukaryote --add_bos --bf16
 
 # Evo2 7B (1 GPU)
 uv run --group evaluation python evaluation/sequence_recovery.py \
@@ -168,6 +168,13 @@ uv run --group evaluation python evaluation/vep_eval.py \
     --bf16 \
     --output_dir ./results/brca2_vep
 
+# GENERator · BRCA2 (8 GPUs)
+uv run --group evaluation python evaluation/vep_eval.py \
+    --model GenerTeam/GENERator-v2-eukaryote-3b-base \
+    --data_path hf://datasets/HuggingFaceBio/brca2-vep/brca2_vep.parquet \
+    --bf16 \
+    --output_dir ./results/brca2_vep
+
 # TraitGym Mendelian — pass --rev_comp_avg, variants can sit on either strand
 uv run --group evaluation python evaluation/vep_eval.py \
     --model HuggingFaceBio/Carbon-3B \
@@ -207,6 +214,12 @@ uv run --group evaluation python evaluation/clinvar_vep_eval.py \
     --add_dna_tag --bf16 --context_length 24000 \
     --output_dir ./results/clinvar
 
+# GENERator
+uv run --group evaluation python evaluation/clinvar_vep_eval.py \
+    --model GenerTeam/GENERator-v2-eukaryote-3b-base \
+    --add_bos --bf16 --context_length 24000 \
+    --output_dir ./results/clinvar
+
 # Evo2 7B
 uv run --group evaluation python evaluation/clinvar_vep_eval.py \
     --model evo2_7b --backend evo2 --bf16 \
@@ -243,6 +256,12 @@ uv run --group evaluation python evaluation/perturbation_tasks.py \
 uv run --group evaluation python evaluation/perturbation_tasks.py \
     --task syn_mouse \
     --model HuggingFaceBio/Carbon-3B \
+    --bf16
+
+# GENERator · human synonymous codons
+uv run --group evaluation python evaluation/perturbation_tasks.py \
+    --task syn_human \
+    --model GenerTeam/GENERator-v2-eukaryote-3b-base \
     --bf16
 
 # Evo2 7B
@@ -299,7 +318,7 @@ uv run --group evaluation python evaluation/genome_niah_eval.py \
 # GENERator-v2 3B at native 16 k (4 k / 8 k / 16 k)
 uv run --group evaluation python evaluation/genome_niah_eval.py \
     --model GenerTeam/GENERator-v2-eukaryote-3b-base \
-    --task niah --ctx 16384 --bf16
+    --task niah --ctx 16384 --add_bos --bf16
 
 # Evo2-7B at 32 k, single 8-GPU node
 uv run --group evaluation python evaluation/genome_niah_eval.py \
