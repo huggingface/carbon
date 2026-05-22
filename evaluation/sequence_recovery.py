@@ -5,17 +5,19 @@ Given a fixed-length DNA context, generate the next N tokens and score the
 exact-base recovery accuracy against the held-out continuation.
 
 Three model families are supported via a single flag:
-  --backend hf       (default) Carbon, GENERator, or any HF causal LM
-  --backend evo2     official `evo2` inference library
+
+  --backend hf   (default)  Carbon, GENERator, or any HF causal LM
+  --backend evo2            official `evo2` inference library
 
 Tag flags (mutually exclusive):
-  --add_dna_tag      prepend `<dna>` to each sequence (Carbon hybrid models)
-  --add_bos          prepend `<s>` (GENERator pure-DNA)
-  (default)          no prefix — Evo2
+  --add_dna_tag   prepend `<dna>` to each sequence (Carbon hybrid models)
+  --add_bos       prepend `<s>` (GENERator pure-DNA)
+  (default)       no prefix — Evo2
 
 Eukaryote / bacteria / others come from the GenerTeam/sequence-recovery dataset.
 
 Example:
+
   # Carbon 3B hybrid (flagship)
   python sequence_recovery.py \
       --model HuggingFaceBio/Carbon-3B \
@@ -35,6 +37,7 @@ Example:
 import argparse
 import hashlib
 import json
+import multiprocessing as mp
 import os
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -42,7 +45,12 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 import pandas as pd
 import torch
 from tqdm import tqdm
-from transformers import AutoModelForCausalLM, AutoTokenizer, LogitsProcessorList
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    LogitsProcessor,
+    LogitsProcessorList,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -66,7 +74,8 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-class SuppressSpecialTokens:
+# FIX 1: inherit from LogitsProcessor so transformers validates it correctly
+class SuppressSpecialTokens(LogitsProcessor):
     def __init__(self, ids):
         self.ids = ids
 
@@ -90,7 +99,11 @@ def _truncate(seq: str, max_seq_len: int) -> str:
     return seq[-n:]
 
 
-def calculate_accuracy(preds, labels, seq_len=30):
+def calculate_accuracy(preds, labels, seq_len: int = 30):
+    # FIX 3: seq_len is now always passed explicitly from main(); the default
+    # of 30 is kept only as a fallback so call-sites that don't yet pass it
+    # still work, but main() derives the value from args instead of relying
+    # on the hard-coded default.
     out = []
     for label, pred in zip(labels, preds):
         match = sum(1 for i in range(min(len(label), len(pred), seq_len)) if label[i] == pred[i])
@@ -104,13 +117,15 @@ def hf_shard(shard_id, records, args, dtype_str):
     device = f"cuda:{shard_id}"
     dtype = torch.bfloat16 if dtype_str == "bfloat16" else torch.float32
 
-
     tok = AutoTokenizer.from_pretrained(args.model, revision=args.revision, trust_remote_code=True)
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
     tok.padding_side = "left"
+
+    # FIX 2: use torch_dtype (documented kwarg); plain dtype= is silently
+    # ignored by from_pretrained and leaves the model in float32
     model = AutoModelForCausalLM.from_pretrained(
-        args.model, revision=args.revision, trust_remote_code=True, dtype=dtype
+        args.model, revision=args.revision, trust_remote_code=True, torch_dtype=dtype
     ).to(device).eval()
 
     special_ids = getattr(tok, "all_special_ids", []) or []
@@ -118,12 +133,14 @@ def hf_shard(shard_id, records, args, dtype_str):
 
     prefix = _prefix(args)
     preds = []
+
     with tqdm(total=len(records), desc=f"gpu{shard_id}", unit="seq") as pbar:
         for i in range(0, len(records), args.batch_size):
             batch = records[i : i + args.batch_size]
             seqs = [prefix + _truncate(r["sequence"], args.max_seq_len) for r in batch]
             enc = tok(seqs, add_special_tokens=False, return_tensors="pt", padding=True, truncation=False)
             enc = {k: v.to(device) if hasattr(v, "to") else v for k, v in enc.items()}
+
             with torch.inference_mode():
                 out = model.generate(
                     **enc,
@@ -132,15 +149,18 @@ def hf_shard(shard_id, records, args, dtype_str):
                     do_sample=False,
                     logits_processor=logits_processor,
                 )
+
             # decode last gen_len tokens; tag-mode needs per-row decode to keep DNA bases
             new_ids = out[:, -args.gen_len:]
             if args.add_dna_tag:
                 decoded = [tok.decode(new_ids[j].tolist()) for j in range(new_ids.shape[0])]
             else:
                 decoded = tok.batch_decode(new_ids, skip_special_tokens=True)
+
             for r, txt in zip(batch, decoded):
                 preds.append({"hash": r["hash"], "pred": txt})
             pbar.update(len(batch))
+
     return preds
 
 
@@ -149,10 +169,13 @@ def run_hf(df: pd.DataFrame, args, dtype_str: str):
     n_gpus = torch.cuda.device_count()
     if n_gpus == 0:
         raise RuntimeError("No GPU available")
-    shard_size = (len(records) + n_gpus - 1) // n_gpus
 
+    shard_size = (len(records) + n_gpus - 1) // n_gpus
     all_preds = []
-    with ProcessPoolExecutor(max_workers=n_gpus) as ex:
+
+    # FIX 1: use spawn context — fork + CUDA is not safe on Linux
+    ctx = mp.get_context("spawn")
+    with ProcessPoolExecutor(max_workers=n_gpus, mp_context=ctx) as ex:
         futs = {
             ex.submit(hf_shard, g, records[g * shard_size : (g + 1) * shard_size], args, dtype_str): g
             for g in range(n_gpus)
@@ -160,6 +183,7 @@ def run_hf(df: pd.DataFrame, args, dtype_str: str):
         }
         for f in as_completed(futs):
             all_preds.extend(f.result())
+
     return all_preds
 
 
@@ -175,10 +199,11 @@ def run_evo2(df: pd.DataFrame, args):
     preds = []
     seqs = df["sequence"].tolist()
     hashes = df["hash"].tolist()
+
     with tqdm(total=len(seqs), desc="evo2", unit="seq") as pbar:
         for i in range(0, len(seqs), args.batch_size):
             batch = seqs[i : i + args.batch_size]
-            prompts = [s[-min(len(s), args.max_seq_len):] for s in batch]
+            prompts = [s[-min(len(s), args.max_seq_len) :] for s in batch]
             try:
                 out = model.generate(prompt_seqs=prompts, n_tokens=args.gen_len_bp, temperature=0.0, top_k=1)
                 for h, gen in zip(hashes[i : i + args.batch_size], out.sequences):
@@ -186,20 +211,27 @@ def run_evo2(df: pd.DataFrame, args):
             except (RuntimeError, torch.cuda.OutOfMemoryError):
                 torch.cuda.empty_cache()
                 for s, h in zip(batch, hashes[i : i + args.batch_size]):
-                    out = model.generate(prompt_seqs=[s[-args.max_seq_len:]],
-                                         n_tokens=args.gen_len_bp, temperature=0.0, top_k=1)
+                    out = model.generate(
+                        prompt_seqs=[s[-args.max_seq_len :]],
+                        n_tokens=args.gen_len_bp,
+                        temperature=0.0,
+                        top_k=1,
+                    )
                     preds.append({"hash": h, "pred": out.sequences[0]})
             pbar.update(len(batch))
+
     return preds
 
 
 def main():
     args = parse_args()
     assert not (args.add_dna_tag and args.add_bos), "--add_dna_tag and --add_bos are mutually exclusive"
+
     if args.n_shards < 1:
         raise ValueError("--n_shards must be >= 1")
     if not 0 <= args.shard_idx < args.n_shards:
         raise ValueError("--shard_idx must satisfy 0 <= shard_idx < n_shards")
+
     dtype_str = "bfloat16" if args.bf16 else "float32"
 
     print("=" * 70)
@@ -207,12 +239,15 @@ def main():
     print("=" * 70)
 
     df = pd.read_parquet(f"{args.data_path}/{args.data_type}/test.parquet")
+
     if args.max_samples:
         df = df.sample(min(args.max_samples, len(df)), random_state=0).reset_index(drop=True)
+
     df["hash"] = df.apply(
         lambda row: hashlib.md5(f"{row['sequence']}_{row.name}".encode()).hexdigest()[:16],
         axis=1,
     )
+
     if args.n_shards > 1:
         total_before_shard = len(df)
         df = df.iloc[args.shard_idx :: args.n_shards].reset_index(drop=True)
@@ -224,6 +259,7 @@ def main():
             f"Shard {args.shard_idx}/{args.n_shards}: selected {len(df)} "
             f"of {total_before_shard} sequences"
         )
+
     print(f"Loaded {len(df)} sequences ({df['type'].value_counts().to_dict() if 'type' in df else 'n/a'})")
 
     t0 = time.time()
@@ -236,7 +272,17 @@ def main():
     pred_df = pd.DataFrame(preds)
     out = df.merge(pred_df, on="hash", how="left")
     out["pred"] = out["pred"].fillna("")
-    out["accuracy"] = calculate_accuracy(out["pred"].tolist(), out["label"].tolist())
+
+    # FIX 3: derive seq_len from args rather than relying on the hardcoded
+    # default of 30.  For the HF backend one token = one 6-mer = 6 bp, so
+    # gen_len * 6 gives the expected number of bases.  For Evo2 the user
+    # supplies gen_len_bp directly.
+    if args.backend == "evo2":
+        seq_len = args.gen_len_bp
+    else:
+        seq_len = args.gen_len * 6
+
+    out["accuracy"] = calculate_accuracy(out["pred"].tolist(), out["label"].tolist(), seq_len=seq_len)
 
     overall = out["accuracy"].mean()
     by_type = out.groupby("type")["accuracy"].mean() if "type" in out.columns else None
@@ -253,8 +299,10 @@ def main():
     base = f"{model_tag}_{args.data_type}_{dtype_str}{shard_tag}"
     parquet = os.path.join(args.output_dir, f"{base}.parquet")
     summary = os.path.join(args.output_dir, f"{base}.json")
+
     cols = [c for c in ["hash", "type", "label", "pred", "accuracy"] if c in out.columns]
     out[cols].to_parquet(parquet)
+
     with open(summary, "w") as f:
         json.dump(
             {
@@ -272,6 +320,7 @@ def main():
             f,
             indent=2,
         )
+
     print(f"\nSaved {parquet}\n      {summary}")
 
 
