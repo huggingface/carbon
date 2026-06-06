@@ -19,11 +19,12 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-EVO2_BENCHMARK_SCRIPT = REPO_ROOT / "evaluation" / "scripts" / "benchmark_evo2_serving.py"
+EVO2_BENCHMARK_SCRIPT = (
+    REPO_ROOT / "evaluation" / "serving" / "benchmark_evo2_serving.py"
+)
 DEFAULT_OUTPUT_ROOT = REPO_ROOT / "scratch" / "serving_benchmarks"
 DEFAULT_CARBON_MODEL = "HuggingFaceBio/Carbon-3B"
 DEFAULT_CARBON_DRAFT_MODEL = "HuggingFaceBio/Carbon-500M"
-DEFAULT_CARBON_VLLM_ARCHITECTURE_OVERRIDE = "LlamaForCausalLM"
 DEFAULT_GENERATOR_MODEL = "GenerTeam/GENERator-v2-eukaryote-3b-base"
 DEFAULT_EVO2_MODEL = "evo2_7b"
 SUMMARY_FIELDS = [
@@ -45,6 +46,7 @@ SUMMARY_FIELDS = [
     "total_output_tokens",
     "request_throughput",
     "output_throughput",
+    "output_bp_per_second",
     "total_token_throughput",
     "mean_ttft_ms",
     "mean_tpot_ms",
@@ -64,6 +66,8 @@ class RunSpec:
     model: str
     prompt_file: Path
     run_dir: Path
+    gpu_count: int = 1
+    bp_per_output_token: float = 1.0
     port: int | None = None
     served_model_name: str | None = None
     draft_model: str | None = None
@@ -95,8 +99,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--split", default="test")
     parser.add_argument("--num-prompts", type=int, default=16)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--input-bp", type=int, default=1000)
-    parser.add_argument("--output-bp", type=int, default=1000)
+    parser.add_argument("--input-bp", type=int, default=1080)
+    parser.add_argument("--output-bp", type=int, default=1080)
     parser.add_argument("--bp-per-token", type=int, default=6)
     parser.add_argument("--carbon-model", default=DEFAULT_CARBON_MODEL)
     parser.add_argument(
@@ -124,16 +128,6 @@ def parse_args() -> argparse.Namespace:
         "--carbon-draft-code-revision",
         default=None,
         help="Draft Carbon code revision recorded in --speculative-config.",
-    )
-    parser.add_argument(
-        "--carbon-vllm-architecture-override",
-        default=DEFAULT_CARBON_VLLM_ARCHITECTURE_OVERRIDE,
-        help=(
-            "HF architecture override for Carbon vLLM servers. The default "
-            "forces vLLM's native Llama implementation and avoids the "
-            "Transformers-backend attention-name collision in speculative "
-            "decoding. Pass an empty value to disable."
-        ),
     )
     parser.add_argument(
         "--carbon-speculative-tokens",
@@ -226,6 +220,13 @@ def evo2_run_name(model_name: str) -> str:
     return sanitize_path_component(normalized_model_name)
 
 
+def evo2_gpu_count(model_name: str) -> int:
+    normalized_model_name = normalize_evo2_model_name(model_name)
+    if normalized_model_name in {"evo2_40b", "evo2_40b_base"}:
+        return 2
+    return 1
+
+
 def model_run_name(model_name: str) -> str:
     return sanitize_path_component(model_name.rsplit("/", 1)[-1].lower())
 
@@ -237,8 +238,12 @@ def load_sequence_recovery_rows(args: argparse.Namespace) -> list[dict]:
     try:
         dataset = load_dataset(repo_id, args.data_config, split=args.split)
     except Exception:
-        parquet_path = f"hf://datasets/{repo_id}/{args.data_config}/{args.split}.parquet"
-        dataset = load_dataset("parquet", data_files={args.split: parquet_path}, split=args.split)
+        parquet_path = (
+            f"hf://datasets/{repo_id}/{args.data_config}/{args.split}.parquet"
+        )
+        dataset = load_dataset(
+            "parquet", data_files={args.split: parquet_path}, split=args.split
+        )
     return list(dataset)
 
 
@@ -540,14 +545,6 @@ def carbon_server_extra_args(args: argparse.Namespace) -> list[str]:
         extra_args.extend(["--code-revision", args.carbon_code_revision])
     if args.carbon_tokenizer_revision:
         extra_args.extend(["--tokenizer-revision", args.carbon_tokenizer_revision])
-
-    architecture = args.carbon_vllm_architecture_override.strip()
-    if not architecture:
-        return extra_args
-    hf_overrides = {"architectures": [architecture]}
-    extra_args.extend(
-        ["--hf-overrides", json.dumps(hf_overrides, separators=(",", ":"))]
-    )
     return extra_args
 
 
@@ -636,10 +633,12 @@ def build_run_specs(
         and not args.skip_spec_vocab_check
         and args.carbon_speculative_tokens
     ):
-        spec_preflight_ok, spec_preflight_reason = check_speculative_vocab_compatibility(
-            args.carbon_model,
-            args.carbon_draft_model,
-            run_dir / "speculative_vocab_preflight.json",
+        spec_preflight_ok, spec_preflight_reason = (
+            check_speculative_vocab_compatibility(
+                args.carbon_model,
+                args.carbon_draft_model,
+                run_dir / "speculative_vocab_preflight.json",
+            )
         )
 
     if not args.skip_carbon:
@@ -652,9 +651,6 @@ def build_run_specs(
             "carbon_tokenizer_revision": args.carbon_tokenizer_revision or "",
             "carbon_draft_revision": args.carbon_draft_revision or "",
             "carbon_draft_code_revision": args.carbon_draft_code_revision or "",
-            "vllm_architecture_override": (
-                args.carbon_vllm_architecture_override.strip()
-            ),
         }
         specs.append(
             RunSpec(
@@ -663,6 +659,7 @@ def build_run_specs(
                 model=args.carbon_model,
                 prompt_file=Path(prompt_files["carbon"]),
                 run_dir=run_dir / f"{carbon_name}-vllm",
+                bp_per_output_token=args.bp_per_token,
                 served_model_name=f"{carbon_name}-vllm",
                 server_extra_args=carbon_extra_args,
                 metadata=carbon_metadata,
@@ -678,12 +675,11 @@ def build_run_specs(
                         model=args.carbon_model,
                         prompt_file=Path(prompt_files["carbon"]),
                         run_dir=run_dir / f"{carbon_name}-spec-{token_count}",
+                        bp_per_output_token=args.bp_per_token,
                         served_model_name=f"{carbon_name}-spec-{token_count}",
                         draft_model=args.carbon_draft_model,
                         num_speculative_tokens=token_count,
-                        speculative_config=carbon_speculative_config(
-                            args, token_count
-                        ),
+                        speculative_config=carbon_speculative_config(args, token_count),
                         server_extra_args=carbon_extra_args,
                         skip_reason=skip_reason,
                         metadata=carbon_metadata,
@@ -700,6 +696,7 @@ def build_run_specs(
                 model=normalized_evo2_model,
                 prompt_file=Path(prompt_files["evo2"]),
                 run_dir=run_dir / evo2_name,
+                gpu_count=evo2_gpu_count(normalized_evo2_model),
                 metadata={
                     "prompt_family": "evo2",
                     "requested_model": args.evo2_model,
@@ -709,14 +706,16 @@ def build_run_specs(
         )
 
     if args.generator != "never":
+        generator_name = model_run_name(args.generator_model)
         specs.append(
             RunSpec(
-                name="generator-v2-eukaryote-3b-vllm",
+                name=f"{generator_name}-vllm",
                 backend="vllm",
                 model=args.generator_model,
                 prompt_file=Path(prompt_files["generator"]),
-                run_dir=run_dir / "generator-v2-eukaryote-3b-vllm",
-                served_model_name="generator-v2-eukaryote-3b-vllm",
+                run_dir=run_dir / f"{generator_name}-vllm",
+                bp_per_output_token=args.bp_per_token,
+                served_model_name=f"{generator_name}-vllm",
                 requires_probe=True,
                 skip_on_probe_failure=args.generator == "auto",
                 metadata={"prompt_family": "generator"},
@@ -830,6 +829,9 @@ def metric_row_from_result(spec: RunSpec, result: dict, status: str) -> dict:
         "p99_itl_ms",
     ]:
         row[key] = result.get(key, "")
+    output_throughput = result.get("output_throughput")
+    if output_throughput not in (None, ""):
+        row["output_bp_per_second"] = output_throughput * spec.bp_per_output_token
     row["result_json"] = str(spec.run_dir / "benchmark.json")
     return row
 
@@ -854,6 +856,7 @@ def base_summary_row(spec: RunSpec, status: str) -> dict:
         "total_output_tokens": "",
         "request_throughput": "",
         "output_throughput": "",
+        "output_bp_per_second": "",
         "total_token_throughput": "",
         "mean_ttft_ms": "",
         "mean_tpot_ms": "",
@@ -1020,7 +1023,9 @@ def run_spec(args: argparse.Namespace, spec: RunSpec) -> dict:
     raise ValueError(f"Unsupported backend: {spec.backend}")
 
 
-def run_gpu_queue(args: argparse.Namespace, gpu_id: str, specs: list[RunSpec]) -> list[dict]:
+def run_gpu_queue(
+    args: argparse.Namespace, gpu_id: str, specs: list[RunSpec]
+) -> list[dict]:
     rows = []
     for spec in specs:
         spec.gpu_id = gpu_id
@@ -1081,12 +1086,59 @@ def assign_specs_to_gpus(
     gpu_ids: list[str],
     max_parallel: int,
 ) -> dict[str, list[RunSpec]]:
-    active_gpus = gpu_ids[: min(max_parallel, len(gpu_ids), len(specs))]
-    assignments = {gpu_id: [] for gpu_id in active_gpus}
-    for index, spec in enumerate(specs):
-        gpu_id = active_gpus[index % len(active_gpus)]
+    active_gpus = gpu_ids[: min(max_parallel, len(gpu_ids))]
+    if not active_gpus:
+        return {}
+    for spec in specs:
+        if spec.gpu_count <= 0:
+            raise ValueError(f"{spec.name} has invalid gpu_count={spec.gpu_count}")
+        if spec.gpu_count > len(active_gpus):
+            raise RuntimeError(
+                f"{spec.name} requires {spec.gpu_count} GPUs, but only "
+                f"{len(active_gpus)} are available after --max-parallel."
+            )
+
+    single_gpu_specs = [spec for spec in specs if spec.gpu_count == 1]
+    remaining_gpus = list(active_gpus)
+    multi_gpu_groups: dict[int, list[tuple[str, ...]]] = {}
+
+    for gpu_count in sorted(
+        {spec.gpu_count for spec in specs if spec.gpu_count > 1},
+        reverse=True,
+    ):
+        specs_for_count = [spec for spec in specs if spec.gpu_count == gpu_count]
+        max_groups = len(remaining_gpus) // gpu_count
+        if single_gpu_specs:
+            max_groups = min(max_groups, max(1, (len(remaining_gpus) - 1) // gpu_count))
+        group_count = min(len(specs_for_count), max_groups)
+        if group_count <= 0:
+            raise RuntimeError(
+                f"No free GPU group is available for {gpu_count}-GPU benchmark specs."
+            )
+        groups = []
+        for _ in range(group_count):
+            group = tuple(remaining_gpus[:gpu_count])
+            del remaining_gpus[:gpu_count]
+            groups.append(group)
+        multi_gpu_groups[gpu_count] = groups
+
+    single_gpu_groups = [(gpu_id,) for gpu_id in remaining_gpus]
+    if single_gpu_specs and not single_gpu_groups:
+        raise RuntimeError("No free GPU is available for one-GPU benchmark specs.")
+
+    assignments: dict[str, list[RunSpec]] = {}
+    group_offsets: dict[int, int] = {}
+    for spec in specs:
+        if spec.gpu_count == 1:
+            groups = single_gpu_groups
+        else:
+            groups = multi_gpu_groups[spec.gpu_count]
+        offset = group_offsets.get(spec.gpu_count, 0)
+        group = groups[offset % len(groups)]
+        group_offsets[spec.gpu_count] = offset + 1
+        gpu_id = ",".join(group)
         spec.gpu_id = gpu_id
-        assignments[gpu_id].append(spec)
+        assignments.setdefault(gpu_id, []).append(spec)
     return assignments
 
 
