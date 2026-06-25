@@ -127,7 +127,7 @@ def load_and_extract(hg38_path: str, clinvar_path: str, context_length: int) -> 
 
 def _hf_shard(args):
     """One-GPU worker: forward pass, return last-token softmax probabilities per variant."""
-    shard_id, records, model, revision, dtype = args
+    shard_id, records, model, revision, dtype, batch_size = args
     torch.cuda.set_device(shard_id)
     device = f"cuda:{shard_id}"
 
@@ -140,8 +140,8 @@ def _hf_shard(args):
 
     out = []
     with tqdm(total=len(records), desc=f"gpu{shard_id}", unit="seq") as pbar:
-        for i in range(0, len(records), args_batch_size):
-            batch = records[i : i + args_batch_size]
+        for i in range(0, len(records), batch_size):
+            batch = records[i : i + batch_size]
             seqs = [r["sequence"] for r in batch]
             enc = tok(seqs, return_tensors="pt", padding=True)
             enc = {k: v.to(device) for k, v in enc.items()}
@@ -158,15 +158,7 @@ def _hf_shard(args):
     return out
 
 
-# Set at runtime so subprocesses pick up the batch size — multiprocessing
-# doesn't share argparse state.
-args_batch_size = 4
-
-
 def compute_probs_hf(df: pd.DataFrame, model: str, revision: str, dtype: str, batch_size: int):
-    global args_batch_size
-    args_batch_size = batch_size
-
     n_gpus = torch.cuda.device_count()
     if n_gpus == 0:
         raise RuntimeError("No GPU available")
@@ -175,7 +167,7 @@ def compute_probs_hf(df: pd.DataFrame, model: str, revision: str, dtype: str, ba
     records = df[["sequence", "hash"]].to_dict("records")
     shard_size = (len(records) + n_gpus - 1) // n_gpus
     work = [
-        (g, records[g * shard_size : (g + 1) * shard_size], model, revision, dtype)
+        (g, records[g * shard_size : (g + 1) * shard_size], model, revision, dtype, batch_size)
         for g in range(n_gpus)
         if g * shard_size < len(records)
     ]
