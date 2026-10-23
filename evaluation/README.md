@@ -203,9 +203,12 @@ score vs `label == 1`.
 Dataset: [`HuggingFaceBio/clinvar-vep-final`](https://huggingface.co/datasets/HuggingFaceBio/clinvar-vep-final).
 This is the GenerTeam ClinVar release (mostly coding) augmented with a
 Carbon-curated noncoding split, since GenerTeam's release is ~99 % coding and
-we wanted balanced coverage. Schema: `chrom, pos, ref, alt, label, region,
-variant_type, …`. If `region` or `variant_type` is present, the script prints
-per-breakdown AUROC / AUPRC automatically.
+we wanted balanced coverage. The dataset has two files,
+`coding/clinvar_coding.parquet` (the default) and
+`non_coding/clinvar_non_coding.parquet`. Pass the second one with
+`--clinvar_path hf://datasets/HuggingFaceBio/clinvar-vep-final/non_coding/clinvar_non_coding.parquet`.
+Both have `chrom, pos, ref, alt, label`. If `region` or `variant_type` is
+present, the script prints per-breakdown AUROC / AUPRC automatically.
 
 ```bash
 # Carbon 3B hybrid (flagship, 8 GPUs, 24 kbp context)

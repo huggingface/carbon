@@ -62,7 +62,9 @@ from tqdm import tqdm
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
 DEFAULT_HG38 = "hf://datasets/GenerTeam/variant-effect-prediction/hg38.parquet"
-DEFAULT_CLINVAR = "hf://datasets/HuggingFaceBio/clinvar-vep-final/clinvar_vep_final.parquet"
+# The dataset ships as two files: coding/clinvar_coding.parquet and
+# non_coding/clinvar_non_coding.parquet. Pass the second one with --clinvar_path.
+DEFAULT_CLINVAR = "hf://datasets/HuggingFaceBio/clinvar-vep-final/coding/clinvar_coding.parquet"
 
 
 def parse_args():
