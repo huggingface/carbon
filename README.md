@@ -15,10 +15,12 @@ cd carbon
 uv sync
 ```
 
-## Paper
+## Tech reports
 
 The Carbon tech report is available on
 [bioRxiv](https://www.biorxiv.org/content/10.64898/2026.05.22.727119v1).
+
+The Carbon-X blog post is available [here](https://huggingface.co/spaces/HuggingFaceBio/Carbon-X-Release).
 
 ## Acknowledgements
 
